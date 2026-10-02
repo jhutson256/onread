@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ContactDao {
-    @Query("SELECT * FROM contact_settings")
+    @Query("SELECT * FROM contact_settings ORDER BY LOWER(displayName) ASC")
     fun getAllContactSettings(): Flow<List<ContactSettingEntity>>
 
     @Query("SELECT * FROM contact_settings WHERE contactId = :contactId")

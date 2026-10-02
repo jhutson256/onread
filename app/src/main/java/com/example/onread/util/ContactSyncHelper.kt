@@ -43,7 +43,7 @@ object ContactSyncHelper {
                             contactId = contactId,
                             phoneNumber = normalizedNumber,
                             displayName = displayName,
-                            isReminderEnabled = existing?.isReminderEnabled ?: false,
+                            isReminderEnabled = existing?.isReminderEnabled ?: true,
                             customDelayMinutes = existing?.customDelayMinutes
                         )
                         contactDao.insertContactSetting(entity)

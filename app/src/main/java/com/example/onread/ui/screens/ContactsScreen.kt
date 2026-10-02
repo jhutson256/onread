@@ -38,7 +38,7 @@ fun ContactsScreen(
     val filteredContacts = contacts.filter {
         it.displayName.contains(searchQuery, ignoreCase = true) ||
                 it.phoneNumber.contains(searchQuery, ignoreCase = true)
-    }
+    }.sortedBy { it.displayName.lowercase() }
 
     Scaffold(
         topBar = {
