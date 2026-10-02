@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.Onread" parent="Theme.MaterialComponents.Light" />
+</resources>
