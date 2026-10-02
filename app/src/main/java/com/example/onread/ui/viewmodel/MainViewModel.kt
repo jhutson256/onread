@@ -13,6 +13,7 @@ import com.example.onread.util.ContactSyncHelper
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -24,6 +25,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
 
     val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
+        .map { list -> list.sortedBy { it.displayName.lowercase() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val reminders: StateFlow<List<ReminderEntity>> = reminderRepository.allReminders

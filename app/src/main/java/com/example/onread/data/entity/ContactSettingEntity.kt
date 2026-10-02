@@ -9,6 +9,6 @@ data class ContactSettingEntity(
     val contactId: String,
     val phoneNumber: String,
     val displayName: String,
-    val isReminderEnabled: Boolean = false,
+    val isReminderEnabled: Boolean = true,
     val customDelayMinutes: Int? = null
 )
