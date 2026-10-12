@@ -15,6 +15,15 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import com.example.onread.ui.viewmodel.SettingsViewModel
 import kotlinx.serialization.Serializable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import com.example.onread.R
 
 @Serializable
 data object DashboardRoute
@@ -42,6 +51,23 @@ fun MainScreen(initialIntent: Intent? = null) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        topBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(90.dp)
+                    .padding(top = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.onread_logo_transparent),
+                    contentDescription = "ONread Logo",
+                    modifier = Modifier.height(60.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        },
+
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(

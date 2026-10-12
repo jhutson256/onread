@@ -110,20 +110,30 @@ fun SettingsScreen(
     val allPermissionsGranted = permissionsList.all { isPermissionGranted(it) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Global Settings", fontWeight = FontWeight.Bold) }
-            )
-        },
-        contentWindowInsets = WindowInsets.safeDrawing
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 8.dp)
+                        .heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Global Settings",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             // Appearance Theme Card
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
