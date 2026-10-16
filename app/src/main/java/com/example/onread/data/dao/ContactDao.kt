@@ -26,6 +26,9 @@ interface ContactDao {
     @Update
     suspend fun updateContactSetting(setting: ContactSettingEntity)
 
+    @Query("UPDATE contact_settings SET isReminderEnabled = :enabled")
+    suspend fun updateAllReminderSettings(enabled: Boolean)
+
     @Delete
     suspend fun deleteContactSetting(setting: ContactSettingEntity)
 }

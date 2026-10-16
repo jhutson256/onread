@@ -95,6 +95,7 @@ class SmsContentObserver(
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
                     while (it.moveToNext()) {
@@ -149,7 +150,7 @@ class SmsContentObserver(
                                         contactId = contactId,
                                         phoneNumber = normalizedAddress.ifEmpty { address },
                                         displayName = displayName,
-                                        isReminderEnabled = true,
+                                        isReminderEnabled = defaultContactReminderEnabled,
                                         customDelayMinutes = null
                                     )
                                     contactDao.insertContactSetting(contactSetting)
