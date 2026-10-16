@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Onread is an Android app that reminds you to reply to the texts that matter.">
+    <title>Onread – Never leave someone on read</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== HEADER / NAVIGATION ===== -->
+<header class="site-header">
+    <div class="container header-inner">
+        <a href="#top" class="logo">Onread</a>
+        <nav aria-label="Main navigation">
+            <ul class="nav-links">
+                <li><a href="#how">How it works</a></li>
+                <li><a href="#features">Features</a></li>
+                <li><a href="#team">Team</a></li>
+                <li><a href="#download" class="btn btn-small">Download</a></li>
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<main id="top">
+
+    <!-- ===== HERO (the first thing people see) ===== -->
+    <section class="hero">
+        <div class="container hero-inner">
+            <div class="hero-text">
+                <h1>Never leave someone on read again.</h1>
+                <p class="lead">
+                    Onread is an Android app that watches for texts from the people you choose
+                    and reminds you to reply, then cancels the reminder once you do.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#download" class="btn">Download the app</a>
+                    <a href="https://github.com/jhutson256/onread" class="btn btn-outline">View the code</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <!-- TODO: replace with a real screenshot, e.g. images/screenshots/home.png -->
+                <div class="phone-placeholder" role="img" aria-label="Screenshot of the Onread app coming soon">
+                    Screenshot<br>coming soon
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== THE PROBLEM ===== -->
+    <section class="section">
+        <div class="container narrow">
+            <h2>The problem</h2>
+            <p>
+                You read a message, think "I'll answer later," and then life happens.
+                Hours or days go by, and the person you care about is still waiting.
+                Onread helps you keep up with the conversations that matter most.
+            </p>
+        </div>
+    </section>
+
+    <!-- ===== HOW IT WORKS ===== -->
+    <section id="how" class="section section-alt">
+        <div class="container">
+            <h2>How it works</h2>
+            <ol class="steps">
+                <li class="card">
+                    <span class="step-number">1</span>
+                    <h3>Pick your people</h3>
+                    <p>Choose the contacts you want Onread to keep an eye on.</p>
+                </li>
+                <li class="card">
+                    <span class="step-number">2</span>
+                    <h3>Get a reminder</h3>
+                    <p>When they text you, Onread reminds you to reply at the time you set.</p>
+                </li>
+                <li class="card">
+                    <span class="step-number">3</span>
+                    <h3>Reply and relax</h3>
+                    <p>As soon as you answer, Onread notices and cancels the reminder for you.</p>
+                </li>
+            </ol>
+        </div>
+    </section>
+
+    <!-- ===== FEATURES ===== -->
+    <section id="features" class="section">
+        <div class="container">
+            <h2>Features</h2>
+            <ul class="features">
+                <li class="card">
+                    <h3>Tracked contacts</h3>
+                    <p>Only the people you choose trigger reminders. No noise from everyone else.</p>
+                </li>
+                <li class="card">
+                    <h3>Custom reminder times</h3>
+                    <p>Decide when you want to be reminded to reply.</p>
+                </li>
+                <li class="card">
+                    <h3>Automatic reply detection</h3>
+                    <p>Reply normally, and the reminder disappears on its own.</p>
+                </li>
+                <li class="card">
+                    <h3>Works with your texts</h3>
+                    <p>Built for regular SMS and RCS messages in Samsung Messages.</p>
+                </li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- ===== SCREENSHOTS ===== -->
+    <section class="section section-alt">
+        <div class="container">
+            <h2>Screenshots</h2>
+            <div class="gallery">
+                <!-- TODO: replace each placeholder with an image, for example:
+                     <img src="images/screenshots/contacts.png" alt="Choosing tracked contacts"> -->
+                <div class="phone-placeholder small" role="img" aria-label="Screenshot coming soon">Screenshot 1</div>
+                <div class="phone-placeholder small" role="img" aria-label="Screenshot coming soon">Screenshot 2</div>
+                <div class="phone-placeholder small" role="img" aria-label="Screenshot coming soon">Screenshot 3</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== HOW WE BUILT IT ===== -->
+    <section class="section">
+        <div class="container narrow">
+            <h2>How we built it</h2>
+            <p>
+                Onread is a native Android app written in <strong>Kotlin</strong> in
+                <strong>Android Studio</strong>. It stores your tracked contacts and reminders in a
+                local <strong>Room</strong> database, listens for new messages, and schedules
+                reminders with Android's alarm system.
+            </p>
+            <ul class="tags">
+                <li>Kotlin</li>
+                <li>Android Studio</li>
+                <li>Room database</li>
+                <li>GitHub</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- ===== PRIVACY ===== -->
+    <section class="section section-alt">
+        <div class="container narrow">
+            <h2>Your privacy</h2>
+            <p>
+                <!-- TODO: confirm this with your team before publishing -->
+                Onread works on your phone. Your messages and contacts stay on your device.
+            </p>
+        </div>
+    </section>
+
+    <!-- ===== TEAM ===== -->
+    <section id="team" class="section">
+        <div class="container">
+            <h2>Meet the team</h2>
+            <ul class="team">
+                <!-- TODO: add each teammate's name, role and GitHub link -->
+                <li class="card">
+                    <h3>Elisa Barranca</h3>
+                    <p>Role goes here</p>
+                </li>
+                <li class="card">
+                    <h3>Teammate name</h3>
+                    <p>Role goes here</p>
+                </li>
+                <li class="card">
+                    <h3>Teammate name</h3>
+                    <p>Role goes here</p>
+                </li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- ===== DOWNLOAD ===== -->
+    <section id="download" class="section cta">
+        <div class="container narrow center">
+            <h2>Try Onread</h2>
+            <p>Onread is in development. Download the latest test version for Android.</p>
+            <!-- TODO: point this to your GitHub Release once you publish one -->
+            <a href="https://github.com/jhutson256/onread/releases" class="btn btn-light">Download for Android</a>
+        </div>
+    </section>
+
+</main>
+
+<!-- ===== FOOTER ===== -->
+<footer class="site-footer">
+    <div class="container">
+        <p>Onread · A BYU-Idaho student team project · 2026</p>
+        <p><a href="https://github.com/jhutson256/onread">View the project on GitHub</a></p>
+    </div>
+</footer>
+
+</body>
+</html>
