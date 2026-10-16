@@ -21,6 +21,8 @@ import com.example.onread.ui.viewmodel.ContactsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import androidx.compose.animation.core.*
+import androidx.compose.ui.graphics.graphicsLayer
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -39,6 +41,33 @@ fun ContactsScreen(
         it.displayName.contains(searchQuery, ignoreCase = true) ||
                 it.phoneNumber.contains(searchQuery, ignoreCase = true)
     }.sortedBy { it.displayName.lowercase() }
+
+    var isSpinning by remember { mutableStateOf(false) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "syncRotation")
+
+    val isSyncing by viewModel.isSyncing.collectAsState()
+
+    val rotation = remember { Animatable(0f) }
+
+    LaunchedEffect(isSyncing) {
+        if (isSyncing) {
+            rotation.snapTo(0f)
+
+            rotation.animateTo(
+                targetValue = -360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = 1000,
+                        easing = LinearEasing
+                    ),
+                    repeatMode = RepeatMode.Restart
+                )
+            )
+        } else {
+            rotation.snapTo(0f)
+        }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
@@ -70,11 +99,15 @@ fun ContactsScreen(
                         } else {
                             contactsPermissionState.launchPermissionRequest()
                         }
-                    }
+                    },
+                    enabled = !isSyncing
                 ) {
                     Icon(
-                        Icons.Rounded.Sync,
-                        contentDescription = "Sync Contacts"
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = "Sync Contacts",
+                        modifier = Modifier.graphicsLayer {
+                            rotationZ = rotation.value
+                        }
                     )
                 }
             }

@@ -55,8 +55,8 @@ fun MainScreen(initialIntent: Intent? = null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(90.dp)
-                    .padding(top = 20.dp),
+                    .height(110.dp)
+                    .padding(top = 40.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
