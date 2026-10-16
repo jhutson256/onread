@@ -20,6 +20,10 @@ class ContactRepository(private val contactDao: ContactDao) {
         contactDao.insertContactSetting(setting)
     }
 
+    suspend fun updateAllReminderSettings(enabled: Boolean) {
+        contactDao.updateAllReminderSettings(enabled)
+    }
+
     suspend fun deleteContactSetting(setting: ContactSettingEntity) {
         contactDao.deleteContactSetting(setting)
     }

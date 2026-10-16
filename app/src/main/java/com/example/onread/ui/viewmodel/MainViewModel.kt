@@ -40,6 +40,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val savedContactsOnly: StateFlow<Boolean> = settingsRepository.savedContactsOnlyFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val hasSeenOnboarding: StateFlow<Boolean?> = settingsRepository.hasSeenOnboarding
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val defaultContactReminderEnabled: StateFlow<Boolean> = settingsRepository.defaultContactReminderEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setOnboardingCompleted(enableReminders: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setOnboardingCompleted(enableReminders)
+            contactRepository.updateAllReminderSettings(enableReminders)
+        }
+    }
+
     fun syncContacts() {
         viewModelScope.launch {
             try {
