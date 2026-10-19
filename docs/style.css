@@ -217,3 +217,16 @@ a:focus-visible {
   .section { padding: 56px 0; }
   h2 { font-size: 1.6rem; }
 }
+/* Main image at the top */
+.hero-screenshot {
+  width: 260px;
+  margin: 0 auto;
+  border-radius: 28px;
+  box-shadow: 0 10px 40px rgba(31, 29, 43, 0.2);
+}
+
+/* Logo in the header */
+.logo-img {
+  height: 80px;
+  width: auto;
+}
