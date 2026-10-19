@@ -5,13 +5,21 @@ import android.net.Uri
 import android.provider.ContactsContract
 import com.example.onread.data.dao.ContactDao
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 object ContactSyncHelper {
 
-    suspend fun syncContacts(context: Context, contactDao: ContactDao) {
+    suspend fun syncContacts(
+        context: Context,
+        contactDao: ContactDao,
+        defaultReminderEnabled: Boolean? = null
+    ) {
+        val defaultEnabled = defaultReminderEnabled
+            ?: SettingsRepository(context).defaultContactReminderEnabled.first()
+
         withContext(Dispatchers.IO) {
             val existingSettings = contactDao.getAllContactSettings().first().associateBy { it.contactId }
             val cursor = context.contentResolver.query(
@@ -43,7 +51,7 @@ object ContactSyncHelper {
                             contactId = contactId,
                             phoneNumber = normalizedNumber,
                             displayName = displayName,
-                            isReminderEnabled = existing?.isReminderEnabled ?: true,
+                            isReminderEnabled = existing?.isReminderEnabled ?: defaultEnabled,
                             customDelayMinutes = existing?.customDelayMinutes
                         )
                         contactDao.insertContactSetting(entity)

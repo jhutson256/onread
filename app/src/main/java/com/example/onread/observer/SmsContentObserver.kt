@@ -30,6 +30,10 @@ class SmsContentObserver(
 
     companion object {
         private const val TAG = "SmsContentObserver"
+
+        fun shouldProcessSms(savedContactsOnly: Boolean, isContactSaved: Boolean): Boolean {
+            return !savedContactsOnly || isContactSaved
+        }
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -95,6 +99,7 @@ class SmsContentObserver(
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
                     while (it.moveToNext()) {
@@ -128,7 +133,12 @@ class SmsContentObserver(
                         when (type) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> {
                                 Log.d(TAG, "Processing INCOMING SMS from $address (id: $id, date: $date)")
-                                val isSaved = ContactSyncHelper.isContactSaved(context, address)
+
+                                val isSaved = if (savedContactsOnly) ContactSyncHelper.isContactSaved(context, address) else true
+                                if (!shouldProcessSms(savedContactsOnly, isSaved)) {
+                                    Log.d(TAG, "Skipping incoming SMS from $address: savedContactsOnly is true and contact is not saved in contacts.")
+                                    continue
+                                }
 
                                 var contactSetting = mutableContactSettings.find { setting ->
                                     val settingDigits = setting.phoneNumber.replace(Regex("[^0-9]"), "")
@@ -138,18 +148,13 @@ class SmsContentObserver(
                                 }
 
                                 if (contactSetting == null) {
-                                    if (savedContactsOnly && !isSaved) {
-                                        Log.d(TAG, "Skipping incoming SMS from $address: savedContactsOnly is true and contact is not saved.")
-                                        continue
-                                    }
-
                                     val contactId = "sms_${System.currentTimeMillis()}_${normalizedAddress.takeLast(6)}"
                                     val displayName = getContactName(context, address)
                                     contactSetting = ContactSettingEntity(
                                         contactId = contactId,
                                         phoneNumber = normalizedAddress.ifEmpty { address },
                                         displayName = displayName,
-                                        isReminderEnabled = true,
+                                        isReminderEnabled = defaultContactReminderEnabled,
                                         customDelayMinutes = null
                                     )
                                     contactDao.insertContactSetting(contactSetting)
