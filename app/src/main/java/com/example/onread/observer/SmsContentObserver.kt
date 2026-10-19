@@ -40,7 +40,7 @@ class SmsContentObserver(
     private val lastProcessedSmsId = AtomicLong(-1L)
 
     init {
-        // Initialize lastProcessedSmsId to latest existing message on startup
+        // Initialize lastProcessedSmsId to latest existing SMS on startup
         scope.launch {
             try {
                 val smsCursor = context.contentResolver.query(
