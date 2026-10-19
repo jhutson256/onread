@@ -1,6 +1,7 @@
 package com.example.onread
 
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.observer.SmsContentObserver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,5 +69,39 @@ class ContactAndReminderTest {
             isReminderEnabled = defaultPreferenceEnabled
         )
         assertTrue("New contact should inherit default enabled preference", newContactEnabled.isReminderEnabled)
+    }
+
+    @Test
+    fun savedContactsOnly_whenFalse_processesAllNumbers() {
+        val savedContactsOnly = false
+
+        val processUnsaved = SmsContentObserver.shouldProcessSms(
+            savedContactsOnly = savedContactsOnly,
+            isContactSaved = false
+        )
+        assertTrue("When savedContactsOnly is false, unsaved numbers should be processed", processUnsaved)
+
+        val processSaved = SmsContentObserver.shouldProcessSms(
+            savedContactsOnly = savedContactsOnly,
+            isContactSaved = true
+        )
+        assertTrue("When savedContactsOnly is false, saved numbers should be processed", processSaved)
+    }
+
+    @Test
+    fun savedContactsOnly_whenTrue_onlyProcessesSavedContacts() {
+        val savedContactsOnly = true
+
+        val processUnsaved = SmsContentObserver.shouldProcessSms(
+            savedContactsOnly = savedContactsOnly,
+            isContactSaved = false
+        )
+        assertFalse("When savedContactsOnly is true, unsaved numbers should NOT be processed", processUnsaved)
+
+        val processSaved = SmsContentObserver.shouldProcessSms(
+            savedContactsOnly = savedContactsOnly,
+            isContactSaved = true
+        )
+        assertTrue("When savedContactsOnly is true, saved contacts should be processed", processSaved)
     }
 }
