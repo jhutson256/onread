@@ -29,6 +29,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val reminders: StateFlow<List<ReminderEntity>> = reminderRepository.allReminders
+        .map { list -> list.sortedByDescending { it.timestamp } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val colorTheme: StateFlow<String> = settingsRepository.colorThemeFlow

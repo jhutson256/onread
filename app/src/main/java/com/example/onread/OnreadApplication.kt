@@ -19,15 +19,26 @@ class OnreadApplication : Application() {
         NotificationHelper.createNotificationChannel(this)
 
         val database = AppDatabase.getDatabase(this)
-        val handler = Handler(Looper.getMainLooper())
+        smsContentObserver = SmsContentObserver(
+            Handler(Looper.getMainLooper()),
+            this,
+            database,
+        )
 
-        smsContentObserver = SmsContentObserver(handler, this, database)
-        mmsRcsContentObserver = MmsRcsContentObserver(handler, this, database)
-
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms-sms"),
+            true,
+            smsContentObserver,
+        )
         contentResolver.registerContentObserver(
             Uri.parse("content://sms"),
             true,
-            smsContentObserver
+            smsContentObserver,
+        )
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms"),
+            true,
+            smsContentObserver,
         )
         contentResolver.registerContentObserver(
             Uri.parse("content://mms"),
