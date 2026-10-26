@@ -9,6 +9,7 @@ import com.example.onread.data.repository.ReminderRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -17,6 +18,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val reminderRepository = ReminderRepository(database.reminderDao())
 
     val reminders: StateFlow<List<ReminderEntity>> = reminderRepository.allReminders
+        .map { list -> list.sortedByDescending { it.timestamp } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pendingReminders: StateFlow<List<ReminderEntity>> = reminderRepository.getPendingReminders()
+        .map { list -> list.sortedByDescending { it.timestamp } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val historyReminders: StateFlow<List<ReminderEntity>> = reminderRepository.getHistoryReminders()
+        .map { list -> list.sortedByDescending { it.timestamp } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun dismissReminder(reminderId: Long) {

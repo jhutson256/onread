@@ -11,13 +11,19 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ReminderDao {
-    @Query("SELECT * FROM reminders ORDER BY triggerTime ASC")
+    @Query("SELECT * FROM reminders ORDER BY timestamp DESC")
     fun getAllReminders(): Flow<List<ReminderEntity>>
+
+    @Query("SELECT * FROM reminders WHERE status = 'PENDING' ORDER BY timestamp DESC")
+    fun getPendingReminders(): Flow<List<ReminderEntity>>
+
+    @Query("SELECT * FROM reminders WHERE status != 'PENDING' ORDER BY timestamp DESC")
+    fun getHistoryReminders(): Flow<List<ReminderEntity>>
 
     @Query("SELECT * FROM reminders WHERE id = :id")
     fun getReminderById(id: Long): Flow<ReminderEntity?>
 
-    @Query("SELECT * FROM reminders WHERE status = :status ORDER BY triggerTime ASC")
+    @Query("SELECT * FROM reminders WHERE status = :status ORDER BY timestamp DESC")
     fun getRemindersByStatus(status: String): Flow<List<ReminderEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

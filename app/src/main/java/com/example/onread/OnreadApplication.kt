@@ -20,13 +20,23 @@ class OnreadApplication : Application() {
         smsContentObserver = SmsContentObserver(
             Handler(Looper.getMainLooper()),
             this,
-            database
+            database,
         )
 
         contentResolver.registerContentObserver(
+            Uri.parse("content://mms-sms"),
+            true,
+            smsContentObserver,
+        )
+        contentResolver.registerContentObserver(
             Uri.parse("content://sms"),
             true,
-            smsContentObserver
+            smsContentObserver,
+        )
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms"),
+            true,
+            smsContentObserver,
         )
     }
 
