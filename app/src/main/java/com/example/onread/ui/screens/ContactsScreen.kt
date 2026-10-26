@@ -41,23 +41,7 @@ fun ContactsScreen(
     }.sortedBy { it.displayName.lowercase() }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Contacts & Rules", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = {
-                        if (contactsPermissionState.status.isGranted) {
-                            viewModel.syncContacts()
-                        } else {
-                            contactsPermissionState.launchPermissionRequest()
-                        }
-                    }) {
-                        Icon(Icons.Rounded.Sync, contentDescription = "Sync Contacts")
-                    }
-                }
-            )
-        },
-        contentWindowInsets = WindowInsets.safeDrawing
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -65,6 +49,36 @@ fun ContactsScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
+            // Page title and Sync button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Contacts & Rules",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                IconButton(
+                    onClick = {
+                        if (contactsPermissionState.status.isGranted) {
+                            viewModel.syncContacts()
+                        } else {
+                            contactsPermissionState.launchPermissionRequest()
+                        }
+                    }
+                ) {
+                    Icon(
+                        Icons.Rounded.Sync,
+                        contentDescription = "Sync Contacts"
+                    )
+                }
+            }
+
             // Permission banner if not granted
             if (!contactsPermissionState.status.isGranted) {
                 Card(
