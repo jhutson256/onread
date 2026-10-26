@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
-import com.example.onread.ui.viewmodel.SettingsViewModel
+import com.example.onread.ui.viewmodel.MainViewModel
 import kotlinx.serialization.Serializable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -35,7 +35,19 @@ data object ContactsRoute
 data object SettingsRoute
 
 @Composable
-fun MainScreen(initialIntent: Intent? = null) {
+fun MainScreen(
+    initialIntent: Intent? = null,
+    viewModel: MainViewModel = viewModel()
+) {
+    val hasSeenOnboarding by viewModel.hasSeenOnboarding.collectAsState()
+
+    if (hasSeenOnboarding == false) {
+        OnboardingDialog(
+            onEnableAll = { viewModel.setOnboardingCompleted(true) },
+            onDisableAll = { viewModel.setOnboardingCompleted(false) }
+        )
+    }
+
     val backStack = remember { mutableStateListOf<Any>(DashboardRoute) }
 
     LaunchedEffect(initialIntent) {
@@ -55,8 +67,8 @@ fun MainScreen(initialIntent: Intent? = null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(90.dp)
-                    .padding(top = 20.dp),
+                    .height(110.dp)
+                    .padding(top = 40.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Image(

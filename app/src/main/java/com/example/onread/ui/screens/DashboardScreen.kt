@@ -26,12 +26,14 @@ fun DashboardScreen(
 ) {
     val reminders by viewModel.reminders.collectAsState()
     var selectedFilter by remember { mutableStateOf("PENDING") }
-    val filteredReminders = reminders.filter {
-        when (selectedFilter) {
-            "PENDING" -> it.status == "PENDING"
-            "HANDLED" -> it.status == "HANDLED" || it.status == "SENT" || it.status == "DISMISSED"
-            else -> true
-        }
+    val filteredReminders = remember(reminders, selectedFilter) {
+        reminders.filter {
+            when (selectedFilter) {
+                "PENDING" -> it.status == "PENDING"
+                "HANDLED" -> it.status == "HANDLED" || it.status == "SENT" || it.status == "DISMISSED"
+                else -> true
+            }
+        }.sortedByDescending { it.timestamp }
     }
 
     Scaffold(
