@@ -1,15 +1,18 @@
 package com.example.onread.observer
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Handler
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
@@ -86,6 +89,9 @@ class SmsContentObserver(
 
         fun getCanonicalAddress(context: Context, idStr: String): String? {
             if (idStr.isBlank()) return null
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                return null
+            }
             return try {
                 val id = idStr.toLongOrNull() ?: return null
                 val uri = Uri.parse("content://mms-sms/canonical-addresses/$id")
@@ -102,6 +108,9 @@ class SmsContentObserver(
                         } else null
                     } else null
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException fetching canonical address for id $idStr", e)
+                null
             } catch (e: Exception) {
                 Log.w(TAG, "Error fetching canonical address for id $idStr", e)
                 null
@@ -110,6 +119,9 @@ class SmsContentObserver(
 
         fun getAddressesForThread(context: Context, threadId: Long): List<String> {
             if (threadId <= 0) return emptyList()
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                return emptyList()
+            }
             val addresses = mutableListOf<String>()
             try {
                 val uri = Uri.parse("content://mms-sms/conversations?simple=true")
@@ -139,6 +151,8 @@ class SmsContentObserver(
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException fetching addresses for threadId $threadId", e)
             } catch (e: Exception) {
                 Log.w(TAG, "Error fetching addresses for threadId $threadId", e)
             }
@@ -159,6 +173,8 @@ class SmsContentObserver(
                             }
                         }
                     }
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "SecurityException fetching thread recipients for threadId $threadId", e)
                 } catch (e: Exception) {
                     Log.w(TAG, "Error fetching thread recipients for threadId $threadId", e)
                 }
@@ -209,6 +225,10 @@ class SmsContentObserver(
     init {
         // Initialize lastProcessedSmsId and lastProcessedMmsId to latest existing message on startup
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "READ_SMS permission not granted. Skipping initial max ID initialization.")
+                return@launch
+            }
             try {
                 val smsCursor = context.contentResolver.query(
                     Uri.parse("content://sms"),
@@ -227,6 +247,8 @@ class SmsContentObserver(
                     }
                 }
                 Log.d(TAG, "Initialized initialMaxSmsId=$initialMaxSmsId, lastProcessedSmsId=${lastProcessedSmsId.get()}, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed SMS pointer", e)
             }
@@ -249,6 +271,8 @@ class SmsContentObserver(
                     }
                 }
                 Log.d(TAG, "Initialized initialMaxMmsId=$initialMaxMmsId, lastProcessedMmsId=${lastProcessedMmsId.get()}, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed MMS pointer", e)
             }
@@ -263,7 +287,41 @@ class SmsContentObserver(
 
     private fun pollLatestSms() {
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestSms.")
+                return@launch
+            }
             try {
+                if (lastProcessedSmsId.get() == -1L) {
+                    try {
+                        val smsCursor = context.contentResolver.query(
+                            Uri.parse("content://sms"),
+                            arrayOf(Telephony.Sms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        smsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxSmsId = maxId
+                                    lastProcessedSmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxSmsId = 0L
+                                lastProcessedSmsId.set(0L)
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed SMS pointer", e)
+                        return@launch
+                    }
+                }
+
                 val currentLastId = lastProcessedSmsId.get()
                 val cursor = context.contentResolver.query(
                     Uri.parse("content://sms"),
@@ -352,6 +410,8 @@ class SmsContentObserver(
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling SMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling SMS in ContentObserver", e)
             }
@@ -360,7 +420,41 @@ class SmsContentObserver(
 
     private fun pollLatestMms() {
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestMms.")
+                return@launch
+            }
             try {
+                if (lastProcessedMmsId.get() == -1L) {
+                    try {
+                        val mmsCursor = context.contentResolver.query(
+                            Uri.parse("content://mms"),
+                            arrayOf(Telephony.Mms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        mmsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Mms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxMmsId = maxId
+                                    lastProcessedMmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxMmsId = 0L
+                                lastProcessedMmsId.set(0L)
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed MMS pointer", e)
+                        return@launch
+                    }
+                }
+
                 val currentLastId = lastProcessedMmsId.get()
                 val cursor = context.contentResolver.query(
                     Uri.parse("content://mms"),
@@ -460,6 +554,8 @@ class SmsContentObserver(
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling MMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling MMS in ContentObserver", e)
             }
@@ -549,6 +645,9 @@ class SmsContentObserver(
     }
 
     private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
         val addresses = mutableListOf<String>()
         try {
             val addrUri = Uri.parse("content://mms/$mmsId/addr")
@@ -570,6 +669,8 @@ class SmsContentObserver(
                     }
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
         }
@@ -577,6 +678,9 @@ class SmsContentObserver(
     }
 
     private fun extractMmsBody(mmsId: Long, subject: String?): String {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return determineMmsBody(null, subject)
+        }
         var extractedText: String? = null
         try {
             val partUri = Uri.parse("content://mms/$mmsId/part")
@@ -620,6 +724,8 @@ class SmsContentObserver(
                                 if (!streamText.isNullOrBlank()) {
                                     textParts.add(streamText)
                                 }
+                            } catch (e: SecurityException) {
+                                Log.w(TAG, "SecurityException reading text part stream for part $partId", e)
                             } catch (e: Exception) {
                                 Log.w(TAG, "Failed to read text part stream for part $partId", e)
                             }
@@ -630,6 +736,8 @@ class SmsContentObserver(
                     extractedText = textParts.joinToString("\n")
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException extracting MMS body for message $mmsId", e)
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting MMS body for message $mmsId", e)
         }
@@ -638,6 +746,9 @@ class SmsContentObserver(
     }
 
     private fun getContactName(context: Context, phoneNumber: String): String {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return phoneNumber
+        }
         return try {
             val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
             context.contentResolver.query(
@@ -652,6 +763,8 @@ class SmsContentObserver(
                     }
                 }
             }
+            phoneNumber
+        } catch (_: SecurityException) {
             phoneNumber
         } catch (_: Exception) {
             phoneNumber
