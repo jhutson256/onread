@@ -24,26 +24,26 @@ class OnreadApplication : Application() {
             database,
         )
 
-        try {
-            contentResolver.registerContentObserver(
-                Uri.parse("content://mms-sms"),
-                true,
-                smsContentObserver,
-            )
-            contentResolver.registerContentObserver(
-                Uri.parse("content://sms"),
-                true,
-                smsContentObserver,
-            )
-            contentResolver.registerContentObserver(
-                Uri.parse("content://mms"),
-                true,
-                smsContentObserver,
-            )
-        } catch (e: SecurityException) {
-            Log.w("OnreadApplication", "SecurityException registering ContentObserver on startup", e)
-        } catch (e: Exception) {
-            Log.e("OnreadApplication", "Exception registering ContentObserver on startup", e)
+        val urisToObserve = listOf(
+            Uri.parse("content://sms"),
+            Uri.parse("content://mms"),
+            Uri.parse("content://mms-sms"),
+            Uri.parse("content://mms-sms/conversations")
+        )
+
+        for (uri in urisToObserve) {
+            try {
+                contentResolver.registerContentObserver(
+                    uri,
+                    true,
+                    smsContentObserver,
+                )
+                Log.d("OnreadApplication", "Registered ContentObserver for $uri")
+            } catch (e: SecurityException) {
+                Log.w("OnreadApplication", "SecurityException registering ContentObserver for $uri", e)
+            } catch (e: Exception) {
+                Log.e("OnreadApplication", "Exception registering ContentObserver for $uri", e)
+            }
         }
     }
 

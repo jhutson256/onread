@@ -132,6 +132,32 @@ class ContactAndReminderTest {
     }
 
     @Test
+    fun normalizeSmsTimestamp_handlesMillisecondsAndSeconds() {
+        val secondsTimestamp = 1700000000L
+        val expectedMs = 1700000000000L
+        assertEquals(expectedMs, SmsContentObserver.normalizeSmsTimestamp(secondsTimestamp))
+
+        val millisTimestamp = 1700000000000L
+        assertEquals(millisTimestamp, SmsContentObserver.normalizeSmsTimestamp(millisTimestamp))
+
+        val invalidTimestamp = 0L
+        assertTrue(SmsContentObserver.normalizeSmsTimestamp(invalidTimestamp) > 0)
+    }
+
+    @Test
+    fun isLikelyPhoneNumber_identifiesPhoneNumbersAndShortcodes() {
+        assertTrue(SmsContentObserver.isLikelyPhoneNumber("+15551234567"))
+        assertTrue(SmsContentObserver.isLikelyPhoneNumber("5551234567"))
+        assertTrue(SmsContentObserver.isLikelyPhoneNumber("12345"))
+        assertTrue(SmsContentObserver.isLikelyPhoneNumber("user@example.com"))
+
+        assertFalse(SmsContentObserver.isLikelyPhoneNumber("1"))
+        assertFalse(SmsContentObserver.isLikelyPhoneNumber("12"))
+        assertFalse(SmsContentObserver.isLikelyPhoneNumber(""))
+        assertFalse(SmsContentObserver.isLikelyPhoneNumber(null))
+    }
+
+    @Test
     fun cleanMmsAddress_filtersInsertAddressTokenAndBlank() {
         assertNull(SmsContentObserver.cleanMmsAddress(null))
         assertNull(SmsContentObserver.cleanMmsAddress(""))
