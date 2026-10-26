@@ -37,12 +37,7 @@ fun DashboardScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Reminders Dashboard", fontWeight = FontWeight.Bold) }
-            )
-        },
-        contentWindowInsets = WindowInsets.safeDrawing
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -50,6 +45,19 @@ fun DashboardScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp)
+                    .heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Reminders Dashboard",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             // Filter Chips
             Row(
                 modifier = Modifier
