@@ -176,12 +176,19 @@ class SmsContentObserver(
                                     Log.d(TAG, "Auto-inserted default ContactSettingEntity for $address ($displayName)")
                                 }
 
-                                if (!contactSetting.isReminderEnabled) {
-                                    Log.d(TAG, "Skipping incoming SMS from $address: reminders disabled for contact ${contactSetting.displayName}")
+                                val group = contactSetting.groupId?.let { database.contactGroupDao().getGroupById(it).first() }
+                                val isReminderEnabled = if (contactSetting.isReminderEnabled) {
+                                    group?.isReminderEnabled ?: true
+                                } else {
+                                    false
+                                }
+
+                                if (!isReminderEnabled) {
+                                    Log.d(TAG, "Skipping incoming SMS from $address: reminders disabled for contact or group")
                                     continue
                                 }
 
-                                val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+                                val delayMinutes = contactSetting.customDelayMinutes ?: group?.delayMinutes ?: defaultDelay
                                 val triggerTime = date + (delayMinutes * 60 * 1000L)
 
                                 val reminder = ReminderEntity(
@@ -310,12 +317,19 @@ class SmsContentObserver(
                                 Log.d(TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
                             }
 
-                            if (!contactSetting.isReminderEnabled) {
-                                Log.d(TAG, "Skipping incoming MMS from $senderAddress: reminders disabled for contact ${contactSetting.displayName}")
+                            val group = contactSetting.groupId?.let { database.contactGroupDao().getGroupById(it).first() }
+                            val isReminderEnabled = if (contactSetting.isReminderEnabled) {
+                                group?.isReminderEnabled ?: true
+                            } else {
+                                false
+                            }
+
+                            if (!isReminderEnabled) {
+                                Log.d(TAG, "Skipping incoming MMS from $senderAddress: reminders disabled for contact or group")
                                 continue
                             }
 
-                            val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+                            val delayMinutes = contactSetting.customDelayMinutes ?: group?.delayMinutes ?: defaultDelay
                             val triggerTime = date + (delayMinutes * 60 * 1000L)
 
                             val reminder = ReminderEntity(

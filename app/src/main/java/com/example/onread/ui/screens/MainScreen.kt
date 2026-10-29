@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContactPhone
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
@@ -30,6 +31,9 @@ data object DashboardRoute
 
 @Serializable
 data object ContactsRoute
+
+@Serializable
+data object GroupsRoute
 
 @Serializable
 data object SettingsRoute
@@ -93,6 +97,17 @@ fun MainScreen(initialIntent: Intent? = null) {
                     label = { Text("Contacts") }
                 )
                 NavigationBarItem(
+                    selected = currentKey is GroupsRoute,
+                    onClick = {
+                        if (currentKey !is GroupsRoute) {
+                            backStack.clear()
+                            backStack.add(GroupsRoute)
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Group, contentDescription = "Groups") },
+                    label = { Text("Groups") }
+                )
+                NavigationBarItem(
                     selected = currentKey is SettingsRoute,
                     onClick = {
                         if (currentKey !is SettingsRoute) {
@@ -121,6 +136,9 @@ fun MainScreen(initialIntent: Intent? = null) {
                     }
                     is ContactsRoute -> NavEntry(key) {
                         ContactsScreen()
+                    }
+                    is GroupsRoute -> NavEntry(key) {
+                        GroupsScreen()
                     }
                     is SettingsRoute -> NavEntry(key) {
                         SettingsScreen()
