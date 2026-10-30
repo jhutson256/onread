@@ -17,6 +17,8 @@ class SettingsRepository(private val context: Context) {
         val COLOR_THEME = stringPreferencesKey("color_theme")
         val DEFAULT_DELAY_MINUTES = intPreferencesKey("default_delay_minutes")
         val SAVED_CONTACTS_ONLY = booleanPreferencesKey("saved_contacts_only")
+        val HAS_SEEN_ONBOARDING = booleanPreferencesKey("has_seen_onboarding")
+        val DEFAULT_CONTACT_REMINDER_ENABLED = booleanPreferencesKey("default_contact_reminder_enabled")
     }
 
     val colorThemeFlow: Flow<String> = context.dataStore.data
@@ -34,6 +36,23 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.SAVED_CONTACTS_ONLY] ?: false
         }
 
+    val hasSeenOnboarding: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] ?: false
+        }
+
+    val defaultContactReminderEnabled: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] ?: true
+        }
+
+    suspend fun setOnboardingCompleted(enableReminders: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] = true
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enableReminders
+        }
+    }
+
     suspend fun updateColorTheme(theme: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.COLOR_THEME] = theme
@@ -49,6 +68,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateSavedContactsOnly(savedOnly: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SAVED_CONTACTS_ONLY] = savedOnly
+        }
+    }
+
+    suspend fun updateDefaultContactReminderEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enabled
         }
     }
 }
