@@ -26,6 +26,15 @@ class ContactsViewModel(application: Application) : AndroidViewModel(application
     val defaultDelayMinutes: StateFlow<Int> = settingsRepository.defaultDelayMinutesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
 
+    val useSpecificTime: StateFlow<Boolean> = settingsRepository.useSpecificTimeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val globalSpecificHour: StateFlow<Int> = settingsRepository.specificTimeHourFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 18)
+
+    val globalSpecificMinute: StateFlow<Int> = settingsRepository.specificTimeMinuteFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
+
     fun syncContacts() {
         viewModelScope.launch {
             try {
