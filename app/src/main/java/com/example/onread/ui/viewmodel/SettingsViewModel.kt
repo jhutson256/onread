@@ -21,6 +21,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val savedContactsOnly: StateFlow<Boolean> = settingsRepository.savedContactsOnlyFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val snoozeEnabled: StateFlow<Boolean> = settingsRepository.snoozeEnabledFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val snoozeDurationMinutes: StateFlow<Int> = settingsRepository.snoozeDurationMinutesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 15)
+
+    val maxSnoozeCount: StateFlow<Int> = settingsRepository.maxSnoozeCountFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 3)
+
     fun updateColorTheme(theme: String) {
         viewModelScope.launch {
             settingsRepository.updateColorTheme(theme)
@@ -36,6 +45,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateSavedContactsOnly(savedOnly: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateSavedContactsOnly(savedOnly)
+        }
+    }
+
+    fun updateSnoozeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateSnoozeEnabled(enabled)
+        }
+    }
+
+    fun updateSnoozeDurationMinutes(minutes: Int) {
+        viewModelScope.launch {
+            settingsRepository.updateSnoozeDurationMinutes(minutes)
+        }
+    }
+
+    fun updateMaxSnoozeCount(count: Int) {
+        viewModelScope.launch {
+            settingsRepository.updateMaxSnoozeCount(count)
         }
     }
 }
