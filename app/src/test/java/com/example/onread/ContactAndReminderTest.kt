@@ -3,6 +3,7 @@ package com.example.onread
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.observer.SmsContentObserver
+import com.example.onread.service.RcsNotificationListenerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -248,5 +249,26 @@ class ContactAndReminderTest {
         assertEquals(2L, sorted[0].id)
         assertEquals(3L, sorted[1].id)
         assertEquals(1L, sorted[2].id)
+    }
+
+    @Test
+    fun rcsNotificationListenerService_isMessagingApp_identifiesKnownMessagingPackages() {
+        assertTrue(RcsNotificationListenerService.isMessagingApp("com.google.android.apps.messaging", null))
+        assertTrue(RcsNotificationListenerService.isMessagingApp("com.samsung.android.messaging", null))
+        assertTrue(RcsNotificationListenerService.isMessagingApp("com.custom.sms", "com.custom.sms"))
+
+        assertFalse(RcsNotificationListenerService.isMessagingApp("com.example.other", "com.google.android.apps.messaging"))
+        assertFalse(RcsNotificationListenerService.isMessagingApp(null, null))
+        assertFalse(RcsNotificationListenerService.isMessagingApp("", ""))
+    }
+
+    @Test
+    fun rcsNotificationListenerService_calculateTriggerTime_addsDelayInMilliseconds() {
+        val postTime = 1000000000000L
+        val delayMinutes = 15
+        val expectedTrigger = postTime + (15 * 60 * 1000L)
+
+        val actualTrigger = RcsNotificationListenerService.calculateTriggerTime(postTime, delayMinutes)
+        assertEquals(expectedTrigger, actualTrigger)
     }
 }
