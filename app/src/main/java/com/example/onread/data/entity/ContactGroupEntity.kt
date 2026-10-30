@@ -5,9 +5,9 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "contact_groups")
 data class ContactGroupEntity(
-    @PrimaryKey
-    val groupId: String,
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
     val name: String,
     val isReminderEnabled: Boolean = true,
-    val delayMinutes: Int = 30
+    val customDelayMinutes: Int = 30
 )
