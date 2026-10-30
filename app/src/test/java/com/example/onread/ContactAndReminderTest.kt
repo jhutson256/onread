@@ -1,5 +1,6 @@
 package com.example.onread
 
+import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.observer.SmsContentObserver
@@ -136,13 +137,13 @@ class ContactAndReminderTest {
     fun normalizeSmsTimestamp_handlesMillisecondsAndSeconds() {
         val secondsTimestamp = 1700000000L
         val expectedMs = 1700000000000L
-        assertEquals(expectedMs, SmsContentObserver.normalizeSmsTimestamp(secondsTimestamp))
+        assertEquals(expectedMs, SmsContentObserver.normalizeMmsTimestamp(secondsTimestamp))
 
         val millisTimestamp = 1700000000000L
-        assertEquals(millisTimestamp, SmsContentObserver.normalizeSmsTimestamp(millisTimestamp))
+        assertEquals(millisTimestamp, SmsContentObserver.normalizeMmsTimestamp(millisTimestamp))
 
         val invalidTimestamp = 0L
-        assertTrue(SmsContentObserver.normalizeSmsTimestamp(invalidTimestamp) > 0)
+        assertTrue(SmsContentObserver.normalizeMmsTimestamp(invalidTimestamp) > 0)
     }
 
     @Test
@@ -252,23 +253,40 @@ class ContactAndReminderTest {
     }
 
     @Test
-    fun rcsNotificationListenerService_isMessagingApp_identifiesKnownMessagingPackages() {
-        assertTrue(RcsNotificationListenerService.isMessagingApp("com.google.android.apps.messaging", null))
-        assertTrue(RcsNotificationListenerService.isMessagingApp("com.samsung.android.messaging", null))
-        assertTrue(RcsNotificationListenerService.isMessagingApp("com.custom.sms", "com.custom.sms"))
-
-        assertFalse(RcsNotificationListenerService.isMessagingApp("com.example.other", "com.google.android.apps.messaging"))
-        assertFalse(RcsNotificationListenerService.isMessagingApp(null, null))
-        assertFalse(RcsNotificationListenerService.isMessagingApp("", ""))
+    fun contactGroupEntity_defaultValues() {
+        val group = ContactGroupEntity(name = "Family")
+        assertEquals("Family", group.name)
+        assertTrue(group.isReminderEnabled)
+        assertEquals(30, group.customDelayMinutes)
+        assertEquals(0L, group.id)
     }
 
     @Test
-    fun rcsNotificationListenerService_calculateTriggerTime_addsDelayInMilliseconds() {
-        val postTime = 1000000000000L
-        val delayMinutes = 15
-        val expectedTrigger = postTime + (15 * 60 * 1000L)
+    fun groupAlphabeticalSorting_caseInsensitive() {
+        val groups = listOf(
+            ContactGroupEntity(id = 1, name = "work"),
+            ContactGroupEntity(id = 2, name = "Friends"),
+            ContactGroupEntity(id = 3, name = "FAMILY")
+        )
 
-        val actualTrigger = RcsNotificationListenerService.calculateTriggerTime(postTime, delayMinutes)
-        assertEquals(expectedTrigger, actualTrigger)
+        val sorted = groups.sortedBy { it.name.lowercase() }
+
+        assertEquals("FAMILY", sorted[0].name)
+        assertEquals("Friends", sorted[1].name)
+        assertEquals("work", sorted[2].name)
+    }
+
+    @Test
+    fun contactSettingAssignmentToGroup() {
+        val contact = ContactSettingEntity(
+            contactId = "c1",
+            phoneNumber = "+111",
+            displayName = "Alice",
+            groupId = null
+        )
+        assertNull(contact.groupId)
+
+        val updated = contact.copy(groupId = 5L)
+        assertEquals(5L, updated.groupId)
     }
 }

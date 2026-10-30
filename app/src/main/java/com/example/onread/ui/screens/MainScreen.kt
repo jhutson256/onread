@@ -33,6 +33,9 @@ data object DashboardRoute
 data object ContactsRoute
 
 @Serializable
+data object GroupsRoute
+
+@Serializable
 data object SettingsRoute
 
 @Composable
@@ -106,6 +109,17 @@ fun MainScreen(
                     label = { Text("Contacts") }
                 )
                 NavigationBarItem(
+                    selected = currentKey is GroupsRoute,
+                    onClick = {
+                        if (currentKey !is GroupsRoute) {
+                            backStack.clear()
+                            backStack.add(GroupsRoute)
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Group, contentDescription = "Groups") },
+                    label = { Text("Groups") }
+                )
+                NavigationBarItem(
                     selected = currentKey is SettingsRoute,
                     onClick = {
                         if (currentKey !is SettingsRoute) {
@@ -134,6 +148,9 @@ fun MainScreen(
                     }
                     is ContactsRoute -> NavEntry(key) {
                         ContactsScreen()
+                    }
+                    is GroupsRoute -> NavEntry(key) {
+                        GroupsScreen()
                     }
                     is SettingsRoute -> NavEntry(key) {
                         SettingsScreen()
