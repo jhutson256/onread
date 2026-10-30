@@ -25,6 +25,12 @@ class OnreadApplication : Application() {
             database,
         )
 
+        mmsRcsContentObserver = MmsRcsContentObserver(
+            Handler(Looper.getMainLooper()),
+            this,
+            database,
+        )
+
         contentResolver.registerContentObserver(
             Uri.parse("content://mms-sms"),
             true,

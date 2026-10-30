@@ -1,4 +1,4 @@
-# Project Plan
+hello# Project Plan
 
 A text reminder app that imports user contacts, monitors incoming and outgoing SMS text messages to manage reminders, provides per-contact reminder settings (enable/disable, custom reminder delay after receiving text), global app settings (color theme, generic default reminder settings across the board, and a setting to only receive reminders from saved contacts).
 
