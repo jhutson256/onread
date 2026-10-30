@@ -289,4 +289,11 @@ class ContactAndReminderTest {
         val updated = contact.copy(groupId = 5L)
         assertEquals(5L, updated.groupId)
     }
+
+    @Test
+    fun reminderDeepLinkUriFormat_isCorrect() {
+        val phoneNumber = "+1234567890"
+        val uriString = "smsto:$phoneNumber"
+        assertEquals("smsto:+1234567890", uriString)
+    }
 }

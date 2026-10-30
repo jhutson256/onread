@@ -38,7 +38,8 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                         context,
                         reminder.id,
                         reminder.contactName,
-                        reminder.messageBody
+                        reminder.messageBody,
+                        reminder.phoneNumber
                     )
                     Log.d(TAG, "Posted notification for reminder ID $reminderId (${reminder.contactName})")
                 } else {
