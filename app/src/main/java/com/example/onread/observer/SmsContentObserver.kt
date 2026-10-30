@@ -460,34 +460,29 @@ class SmsContentObserver(
 
                         val resolvedAddress = resolveAddress(context, rawAddress, threadId)
 
-                        if (resolvedAddress.isNullOrEmpty()) {
-                            Log.d(RCS_LOG_TAG, "SMS/RCS address could not be resolved for message $id. Skipping.")
-                            continue
-                        }
-
-                        Log.d(RCS_LOG_TAG, "Resolved address for message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
-
-                        // DO NOT filter out messages where protocol is null or 0 (RCS written by Google Messages often has protocol == null)
-                        when (type) {
-                            Telephony.Sms.MESSAGE_TYPE_INBOX -> {
-                                Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
-                                processIncomingMessage(
-                                    senderAddress = resolvedAddress,
-                                    body = body ?: "",
-                                    timestampMs = dateMs,
-                                    sourceTag = "RCS/SMS",
-                                    savedContactsOnly = savedContactsOnly,
-                                    defaultDelay = defaultDelay,
-                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                    mutableContactSettings = mutableContactSettings
-                                )
-                            }
-                            Telephony.Sms.MESSAGE_TYPE_SENT -> {
-                                Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
-                                processOutgoingMessage(resolvedAddress)
-                            }
-                            else -> {
-                                Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
+                        if (resolvedAddress != null) {
+                            // DO NOT filter out messages where protocol is null or 0 (RCS written by Google Messages often has protocol == null)
+                            when (type) {
+                                Telephony.Sms.MESSAGE_TYPE_INBOX -> {
+                                    Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
+                                    processIncomingMessage(
+                                        senderAddress = resolvedAddress,
+                                        body = body ?: "",
+                                        timestampMs = dateMs,
+                                        sourceTag = "RCS/SMS",
+                                        savedContactsOnly = savedContactsOnly,
+                                        defaultDelay = defaultDelay,
+                                        defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                        mutableContactSettings = mutableContactSettings
+                                    )
+                                }
+                                Telephony.Sms.MESSAGE_TYPE_SENT -> {
+                                    Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
+                                    processOutgoingMessage(resolvedAddress)
+                                }
+                                else -> {
+                                    Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
+                                }
                             }
                         }
                     }
@@ -605,26 +600,25 @@ class SmsContentObserver(
 
                         if (isIncoming) {
                             val senders = getMmsAddresses(id, PDU_HEADER_FROM)
-                            val rawSender = senders.firstOrNull()
-                            val sender = resolveAddress(context, rawSender, threadId)
-                            if (sender == null) {
-                                Log.d(RCS_LOG_TAG, "MMS sender address is null or empty for message $id. Skipping.")
-                                continue
+                            var senderAddress = senders.firstOrNull()
+                            if (senderAddress.isNullOrBlank() && threadId != null && threadId > 0) {
+                                val threadAddrs = getAddressesForThread(context, threadId)
+                                senderAddress = threadAddrs.firstOrNull()
                             }
-                            Log.d(RCS_LOG_TAG, "Processing INCOMING MMS from $sender (id: $id, date: $dateMs)")
-
-                            val body = extractMmsBody(id, subject)
-
-                            processIncomingMessage(
-                                senderAddress = sender,
-                                body = body,
-                                timestampMs = dateMs,
-                                sourceTag = "MMS",
-                                savedContactsOnly = savedContactsOnly,
-                                defaultDelay = defaultDelay,
-                                defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                mutableContactSettings = mutableContactSettings
-                            )
+                            val resolvedSender = senderAddress?.let { resolveAddress(context, it, threadId) }
+                            if (resolvedSender != null) {
+                                val body = extractMmsBody(id, subject)
+                                processIncomingMessage(
+                                    senderAddress = resolvedSender,
+                                    body = body,
+                                    timestampMs = dateMs,
+                                    sourceTag = "MMS",
+                                    savedContactsOnly = savedContactsOnly,
+                                    defaultDelay = defaultDelay,
+                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                    mutableContactSettings = mutableContactSettings
+                                )
+                            }
                         } else if (isOutgoing) {
                             var recipients = getMmsAddresses(id, PDU_HEADER_TO)
                             if (recipients.isEmpty() && threadId != null && threadId > 0) {
