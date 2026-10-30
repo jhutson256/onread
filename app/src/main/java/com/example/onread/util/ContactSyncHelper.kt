@@ -64,7 +64,10 @@ object ContactSyncHelper {
                                 phoneNumber = normalizedNumber,
                                 displayName = displayName,
                                 isReminderEnabled = existing?.isReminderEnabled ?: defaultEnabled,
-                                customDelayMinutes = existing?.customDelayMinutes
+                                customDelayMinutes = existing?.customDelayMinutes,
+                                customDelayUpdatedAt = existing?.customDelayUpdatedAt ?: 0L,
+                                groupId = existing?.groupId,
+                                groupAssignedAt = existing?.groupAssignedAt ?: 0L
                             )
                             contactDao.insertContactSetting(entity)
                         }

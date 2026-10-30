@@ -686,12 +686,33 @@ class SmsContentObserver(
             Log.d(RCS_LOG_TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
         }
 
-        if (!contactSetting.isReminderEnabled) {
-            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName}")
+        val group = contactSetting.groupId?.let { database.contactGroupDao().getGroupById(it).first() }
+        val isReminderEnabled = if (contactSetting.isReminderEnabled) {
+            group?.isReminderEnabled ?: true
+        } else {
+            false
+        }
+
+        if (!isReminderEnabled) {
+            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact or group")
             return
         }
 
-        val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+        val delayMinutes = when {
+            contactSetting.customDelayMinutes != null -> {
+                if (group != null && contactSetting.groupAssignedAt > contactSetting.customDelayUpdatedAt) {
+                    group.customDelayMinutes
+                } else {
+                    contactSetting.customDelayMinutes
+                }
+            }
+            group != null -> {
+                group.customDelayMinutes
+            }
+            else -> {
+                defaultDelay
+            }
+        }
         val triggerTime = timestampMs + (delayMinutes * 60 * 1000L)
 
         val messageText = if (body.isNotBlank()) body else "[RCS message]"
