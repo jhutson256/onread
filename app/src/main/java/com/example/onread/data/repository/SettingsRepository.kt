@@ -17,6 +17,9 @@ class SettingsRepository(private val context: Context) {
         val COLOR_THEME = stringPreferencesKey("color_theme")
         val DEFAULT_DELAY_MINUTES = intPreferencesKey("default_delay_minutes")
         val SAVED_CONTACTS_ONLY = booleanPreferencesKey("saved_contacts_only")
+        val USE_SPECIFIC_TIME = booleanPreferencesKey("use_specific_time")
+        val SPECIFIC_TIME_HOUR = intPreferencesKey("specific_time_hour")
+        val SPECIFIC_TIME_MINUTE = intPreferencesKey("specific_time_minute")
         val HAS_SEEN_ONBOARDING = booleanPreferencesKey("has_seen_onboarding")
         val DEFAULT_CONTACT_REMINDER_ENABLED = booleanPreferencesKey("default_contact_reminder_enabled")
     }
@@ -36,6 +39,20 @@ class SettingsRepository(private val context: Context) {
             preferences[PreferencesKeys.SAVED_CONTACTS_ONLY] ?: false
         }
 
+    val useSpecificTimeFlow: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.USE_SPECIFIC_TIME] ?: false
+        }
+
+    val specificTimeHourFlow: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.SPECIFIC_TIME_HOUR] ?: 18 // Default 6:30 PM (18:30)
+        }
+
+    val specificTimeMinuteFlow: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.SPECIFIC_TIME_MINUTE] ?: 30
+        }
     val hasSeenOnboarding: Flow<Boolean> = context.dataStore.data
         .map { preferences ->
             preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] ?: false
@@ -71,6 +88,18 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun updateUseSpecificTime(useSpecific: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.USE_SPECIFIC_TIME] = useSpecific
+        }
+    }
+
+    suspend fun updateSpecificTime(hour: Int, minute: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SPECIFIC_TIME_HOUR] = hour
+            preferences[PreferencesKeys.SPECIFIC_TIME_MINUTE] = minute
+        }
+    }
     suspend fun updateDefaultContactReminderEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enabled

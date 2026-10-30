@@ -424,6 +424,9 @@ class SmsContentObserver(
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
+                    val specificHour = settingsRepository.specificTimeHourFlow.first()
+                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
