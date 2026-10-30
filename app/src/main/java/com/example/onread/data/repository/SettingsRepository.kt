@@ -98,6 +98,8 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SPECIFIC_TIME_HOUR] = hour
             preferences[PreferencesKeys.SPECIFIC_TIME_MINUTE] = minute
+        }
+    }
     suspend fun updateDefaultContactReminderEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enabled

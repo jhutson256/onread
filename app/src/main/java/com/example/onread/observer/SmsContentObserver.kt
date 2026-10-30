@@ -551,21 +551,6 @@ class SmsContentObserver(
                     "_id ASC"
                 )
 
-                                    val contactId = "sms_${System.currentTimeMillis()}_${normalizedAddress.takeLast(6)}"
-                                    val displayName = getContactName(context, address)
-                                    contactSetting = ContactSettingEntity(
-                                        contactId = contactId,
-                                        phoneNumber = normalizedAddress.ifEmpty { address },
-                                        displayName = displayName,
-                                        isReminderEnabled = true,
-                                        customDelayMinutes = null,
-                                        customSpecificHour = null,
-                                        customSpecificMinute = null
-                                    )
-                                    contactDao.insertContactSetting(contactSetting)
-                                    mutableContactSettings.add(contactSetting)
-                                    Log.d(TAG, "Auto-inserted default ContactSettingEntity for $address ($displayName)")
-                                }
                 cursor?.use {
                     if (it.count == 0) {
                         Log.d(TAG, "No new MMS messages to process (lastProcessedMmsId=$currentLastId)")
@@ -574,24 +559,6 @@ class SmsContentObserver(
 
                     Log.d(RCS_LOG_TAG, "Polling content://mms: found ${it.count} new entries (lastProcessedMmsId=$currentLastId)")
 
-                                val triggerTime = if (useSpecificTime) {
-                                    val targetHour = contactSetting.customSpecificHour ?: specificHour
-                                    val targetMinute = contactSetting.customSpecificMinute ?: specificMinute
-                                    val calendar = java.util.Calendar.getInstance().apply {
-                                        timeInMillis = date
-                                        set(java.util.Calendar.HOUR_OF_DAY, targetHour)
-                                        set(java.util.Calendar.MINUTE, targetMinute)
-                                        set(java.util.Calendar.SECOND, 0)
-                                        set(java.util.Calendar.MILLISECOND, 0)
-                                        if (timeInMillis <= date) {
-                                            add(java.util.Calendar.DAY_OF_YEAR, 1)
-                                        }
-                                    }
-                                    calendar.timeInMillis
-                                } else {
-                                    val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
-                                    date + (delayMinutes * 60 * 1000L)
-                                }
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
 
