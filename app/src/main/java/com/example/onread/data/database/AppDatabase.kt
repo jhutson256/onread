@@ -5,14 +5,17 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.onread.data.dao.ContactDao
+import com.example.onread.data.dao.ContactGroupDao
 import com.example.onread.data.dao.ReminderDao
+import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 
-@Database(entities = [ContactSettingEntity::class, ReminderEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, ContactGroupEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun reminderDao(): ReminderDao
+    abstract fun contactGroupDao(): ContactGroupDao
 
     companion object {
         @Volatile
@@ -25,7 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "text_reminder_database"
                 )
-                    .fallbackToDestructiveMigration(true)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

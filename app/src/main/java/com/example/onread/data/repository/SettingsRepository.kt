@@ -20,6 +20,8 @@ class SettingsRepository(private val context: Context) {
         val USE_SPECIFIC_TIME = booleanPreferencesKey("use_specific_time")
         val SPECIFIC_TIME_HOUR = intPreferencesKey("specific_time_hour")
         val SPECIFIC_TIME_MINUTE = intPreferencesKey("specific_time_minute")
+        val HAS_SEEN_ONBOARDING = booleanPreferencesKey("has_seen_onboarding")
+        val DEFAULT_CONTACT_REMINDER_ENABLED = booleanPreferencesKey("default_contact_reminder_enabled")
     }
 
     val colorThemeFlow: Flow<String> = context.dataStore.data
@@ -51,6 +53,22 @@ class SettingsRepository(private val context: Context) {
         .map { preferences ->
             preferences[PreferencesKeys.SPECIFIC_TIME_MINUTE] ?: 30
         }
+    val hasSeenOnboarding: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] ?: false
+        }
+
+    val defaultContactReminderEnabled: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] ?: true
+        }
+
+    suspend fun setOnboardingCompleted(enableReminders: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HAS_SEEN_ONBOARDING] = true
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enableReminders
+        }
+    }
 
     suspend fun updateColorTheme(theme: String) {
         context.dataStore.edit { preferences ->
@@ -80,6 +98,9 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SPECIFIC_TIME_HOUR] = hour
             preferences[PreferencesKeys.SPECIFIC_TIME_MINUTE] = minute
+    suspend fun updateDefaultContactReminderEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enabled
         }
     }
 }

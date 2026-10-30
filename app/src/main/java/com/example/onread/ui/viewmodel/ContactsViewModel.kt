@@ -13,6 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ContactsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
@@ -34,13 +38,26 @@ class ContactsViewModel(application: Application) : AndroidViewModel(application
 
     val globalSpecificMinute: StateFlow<Int> = settingsRepository.specificTimeMinuteFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing = _isSyncing.asStateFlow()
 
     fun syncContacts() {
+        if (_isSyncing.value) return
+
+        _isSyncing.value = true
+
         viewModelScope.launch {
             try {
-                ContactSyncHelper.syncContacts(getApplication(), database.contactDao())
+                withContext(Dispatchers.IO) {
+                    ContactSyncHelper.syncContacts(
+                        getApplication(),
+                        database.contactDao()
+                    )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                _isSyncing.value = false
             }
         }
     }

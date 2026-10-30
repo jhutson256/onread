@@ -1,5 +1,8 @@
 package com.example.onread.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -26,21 +30,18 @@ fun DashboardScreen(
 ) {
     val reminders by viewModel.reminders.collectAsState()
     var selectedFilter by remember { mutableStateOf("PENDING") }
-    val filteredReminders = reminders.filter {
-        when (selectedFilter) {
-            "PENDING" -> it.status == "PENDING"
-            "HANDLED" -> it.status == "HANDLED" || it.status == "SENT" || it.status == "DISMISSED"
-            else -> true
-        }
+    val filteredReminders = remember(reminders, selectedFilter) {
+        reminders.filter {
+            when (selectedFilter) {
+                "PENDING" -> it.status == "PENDING"
+                "HANDLED" -> it.status == "HANDLED" || it.status == "SENT" || it.status == "DISMISSED"
+                else -> true
+            }
+        }.sortedByDescending { it.timestamp }
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Reminders Dashboard", fontWeight = FontWeight.Bold) }
-            )
-        },
-        contentWindowInsets = WindowInsets.safeDrawing
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -48,6 +49,19 @@ fun DashboardScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp)
+                    .heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Reminders Dashboard",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             // Filter Chips
             Row(
                 modifier = Modifier
@@ -124,11 +138,19 @@ fun ReminderCard(
     onMarkHandled: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
     val timeFormatted = dateFormat.format(Date(reminder.timestamp))
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                val intent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("smsto:${reminder.phoneNumber}")
+                }
+                context.startActivity(intent)
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(

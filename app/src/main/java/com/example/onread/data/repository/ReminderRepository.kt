@@ -8,6 +8,14 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
 
     val allReminders: Flow<List<ReminderEntity>> = reminderDao.getAllReminders()
 
+    fun getPendingReminders(): Flow<List<ReminderEntity>> {
+        return reminderDao.getPendingReminders()
+    }
+
+    fun getHistoryReminders(): Flow<List<ReminderEntity>> {
+        return reminderDao.getHistoryReminders()
+    }
+
     fun getReminderById(id: Long): Flow<ReminderEntity?> {
         return reminderDao.getReminderById(id)
     }

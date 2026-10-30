@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContactPhone
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
@@ -13,8 +14,17 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
-import com.example.onread.ui.viewmodel.SettingsViewModel
+import com.example.onread.ui.viewmodel.MainViewModel
 import kotlinx.serialization.Serializable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import com.example.onread.R
 
 @Serializable
 data object DashboardRoute
@@ -23,10 +33,25 @@ data object DashboardRoute
 data object ContactsRoute
 
 @Serializable
+data object GroupsRoute
+
+@Serializable
 data object SettingsRoute
 
 @Composable
-fun MainScreen(initialIntent: Intent? = null) {
+fun MainScreen(
+    initialIntent: Intent? = null,
+    viewModel: MainViewModel = viewModel()
+) {
+    val hasSeenOnboarding by viewModel.hasSeenOnboarding.collectAsState()
+
+    if (hasSeenOnboarding == false) {
+        OnboardingDialog(
+            onEnableAll = { viewModel.setOnboardingCompleted(true) },
+            onDisableAll = { viewModel.setOnboardingCompleted(false) }
+        )
+    }
+
     val backStack = remember { mutableStateListOf<Any>(DashboardRoute) }
 
     LaunchedEffect(initialIntent) {
@@ -42,6 +67,23 @@ fun MainScreen(initialIntent: Intent? = null) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        topBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .padding(top = 40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.onread_logo_transparent),
+                    contentDescription = "ONread Logo",
+                    modifier = Modifier.height(60.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        },
+
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
@@ -65,6 +107,17 @@ fun MainScreen(initialIntent: Intent? = null) {
                     },
                     icon = { Icon(Icons.Rounded.ContactPhone, contentDescription = "Contacts") },
                     label = { Text("Contacts") }
+                )
+                NavigationBarItem(
+                    selected = currentKey is GroupsRoute,
+                    onClick = {
+                        if (currentKey !is GroupsRoute) {
+                            backStack.clear()
+                            backStack.add(GroupsRoute)
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Group, contentDescription = "Groups") },
+                    label = { Text("Groups") }
                 )
                 NavigationBarItem(
                     selected = currentKey is SettingsRoute,
@@ -95,6 +148,9 @@ fun MainScreen(initialIntent: Intent? = null) {
                     }
                     is ContactsRoute -> NavEntry(key) {
                         ContactsScreen()
+                    }
+                    is GroupsRoute -> NavEntry(key) {
+                        GroupsScreen()
                     }
                     is SettingsRoute -> NavEntry(key) {
                         SettingsScreen()

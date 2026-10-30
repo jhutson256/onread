@@ -22,6 +22,8 @@ import com.example.onread.ui.viewmodel.ContactsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import androidx.compose.animation.core.*
+import androidx.compose.ui.graphics.graphicsLayer
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -44,24 +46,35 @@ fun ContactsScreen(
                 it.phoneNumber.contains(searchQuery, ignoreCase = true)
     }.sortedBy { it.displayName.lowercase() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Contacts & Rules", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = {
-                        if (contactsPermissionState.status.isGranted) {
-                            viewModel.syncContacts()
-                        } else {
-                            contactsPermissionState.launchPermissionRequest()
-                        }
-                    }) {
-                        Icon(Icons.Rounded.Sync, contentDescription = "Sync Contacts")
-                    }
-                }
+    var isSpinning by remember { mutableStateOf(false) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "syncRotation")
+
+    val isSyncing by viewModel.isSyncing.collectAsState()
+
+    val rotation = remember { Animatable(0f) }
+
+    LaunchedEffect(isSyncing) {
+        if (isSyncing) {
+            rotation.snapTo(0f)
+
+            rotation.animateTo(
+                targetValue = -360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = 1000,
+                        easing = LinearEasing
+                    ),
+                    repeatMode = RepeatMode.Restart
+                )
             )
-        },
-        contentWindowInsets = WindowInsets.safeDrawing
+        } else {
+            rotation.snapTo(0f)
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -69,6 +82,40 @@ fun ContactsScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
+            // Page title and Sync button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Contacts & Rules",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                IconButton(
+                    onClick = {
+                        if (contactsPermissionState.status.isGranted) {
+                            viewModel.syncContacts()
+                        } else {
+                            contactsPermissionState.launchPermissionRequest()
+                        }
+                    },
+                    enabled = !isSyncing
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = "Sync Contacts",
+                        modifier = Modifier.graphicsLayer {
+                            rotationZ = rotation.value
+                        }
+                    )
+                }
+            }
+
             // Permission banner if not granted
             if (!contactsPermissionState.status.isGranted) {
                 Card(

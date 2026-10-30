@@ -6,10 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.example.onread.MainActivity
 
 object NotificationHelper {
     const val CHANNEL_ID = "text_reminders_channel"
@@ -27,10 +27,9 @@ object NotificationHelper {
         }
     }
 
-    fun showReminderNotification(context: Context, reminderId: Long, contactName: String, messageBody: String) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("OPEN_DASHBOARD", true)
+    fun showReminderNotification(context: Context, reminderId: Long, contactName: String, messageBody: String, phoneNumber: String) {
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("smsto:$phoneNumber")
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
