@@ -1,15 +1,18 @@
 package com.example.onread.observer
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Handler
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
@@ -30,6 +33,7 @@ class SmsContentObserver(
 
     companion object {
         private const val TAG = "SmsContentObserver"
+        private const val RCS_LOG_TAG = "ONREAD_RCS"
 
         const val PDU_HEADER_FROM = 137
         const val PDU_HEADER_TO = 151
@@ -49,6 +53,14 @@ class SmsContentObserver(
         }
 
         fun normalizeMmsTimestamp(rawDate: Long): Long {
+            return when {
+                rawDate <= 0 -> System.currentTimeMillis()
+                rawDate < 10000000000L -> rawDate * 1000L
+                else -> rawDate
+            }
+        }
+
+        fun normalizeSmsTimestamp(rawDate: Long): Long {
             return when {
                 rawDate <= 0 -> System.currentTimeMillis()
                 rawDate < 10000000000L -> rawDate * 1000L
@@ -84,8 +96,20 @@ class SmsContentObserver(
             return timestamp >= observerStartTime && messageId > initialMaxId
         }
 
+        fun isLikelyPhoneNumber(address: String?): Boolean {
+            if (address.isNullOrBlank()) return false
+            val trimmed = address.trim()
+            if (trimmed.contains("@") || trimmed.startsWith("+")) return true
+            val digits = trimmed.filter { it.isDigit() }
+            if (digits.length >= 5) return true
+            return false
+        }
+
         fun getCanonicalAddress(context: Context, idStr: String): String? {
             if (idStr.isBlank()) return null
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                return null
+            }
             return try {
                 val id = idStr.toLongOrNull() ?: return null
                 val uri = Uri.parse("content://mms-sms/canonical-addresses/$id")
@@ -102,6 +126,9 @@ class SmsContentObserver(
                         } else null
                     } else null
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException fetching canonical address for id $idStr", e)
+                null
             } catch (e: Exception) {
                 Log.w(TAG, "Error fetching canonical address for id $idStr", e)
                 null
@@ -110,7 +137,11 @@ class SmsContentObserver(
 
         fun getAddressesForThread(context: Context, threadId: Long): List<String> {
             if (threadId <= 0) return emptyList()
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                return emptyList()
+            }
             val addresses = mutableListOf<String>()
+
             try {
                 val uri = Uri.parse("content://mms-sms/conversations?simple=true")
                 context.contentResolver.query(
@@ -132,6 +163,12 @@ class SmsContentObserver(
                                         val addr = getCanonicalAddress(context, trimmedId)
                                         if (!addr.isNullOrBlank()) {
                                             addresses.add(addr)
+                                        } else {
+                                            cleanMmsAddress(trimmedId)?.let { cleanedId ->
+                                                if (isLikelyPhoneNumber(cleanedId)) {
+                                                    addresses.add(cleanedId)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -139,6 +176,8 @@ class SmsContentObserver(
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException fetching addresses for threadId $threadId", e)
             } catch (e: Exception) {
                 Log.w(TAG, "Error fetching addresses for threadId $threadId", e)
             }
@@ -155,12 +194,49 @@ class SmsContentObserver(
                         while (cursor.moveToNext()) {
                             if (addrIndex != -1) {
                                 val rawAddr = cursor.getString(addrIndex)
-                                cleanMmsAddress(rawAddr)?.let { addresses.add(it) }
+                                cleanMmsAddress(rawAddr)?.let { cleaned ->
+                                    val canonical = if (cleaned.all { it.isDigit() }) getCanonicalAddress(context, cleaned) else null
+                                    addresses.add(canonical ?: cleaned)
+                                }
                             }
                         }
                     }
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "SecurityException fetching thread recipients for threadId $threadId", e)
                 } catch (e: Exception) {
                     Log.w(TAG, "Error fetching thread recipients for threadId $threadId", e)
+                }
+            }
+
+            if (addresses.isEmpty()) {
+                try {
+                    val smsUri = Uri.parse("content://sms")
+                    context.contentResolver.query(
+                        smsUri,
+                        arrayOf("address"),
+                        "thread_id = ? AND address IS NOT NULL AND address != ''",
+                        arrayOf(threadId.toString()),
+                        "date DESC LIMIT 5"
+                    )?.use { cursor ->
+                        val addrIndex = cursor.getColumnIndex("address")
+                        while (cursor.moveToNext()) {
+                            if (addrIndex != -1) {
+                                val rawAddr = cursor.getString(addrIndex)
+                                cleanMmsAddress(rawAddr)?.let { cleaned ->
+                                    val canonical = if (cleaned.all { it.isDigit() }) getCanonicalAddress(context, cleaned) else null
+                                    val finalAddr = canonical ?: cleaned
+                                    if (isLikelyPhoneNumber(finalAddr)) {
+                                        addresses.add(finalAddr)
+                                        return@use
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "SecurityException querying content://sms for threadId $threadId", e)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error querying content://sms for threadId $threadId", e)
                 }
             }
 
@@ -176,13 +252,17 @@ class SmsContentObserver(
                     if (!canonical.isNullOrBlank()) {
                         return canonical
                     }
+                    if (isLikelyPhoneNumber(cleaned)) {
+                        return cleaned
+                    }
                 } else {
                     return cleaned
                 }
             }
 
-            if (threadId != null && threadId > 0) {
-                val threadAddresses = getAddressesForThread(context, threadId)
+            val effectiveThreadId = threadId ?: cleaned?.toLongOrNull()
+            if (effectiveThreadId != null && effectiveThreadId > 0) {
+                val threadAddresses = getAddressesForThread(context, effectiveThreadId)
                 if (threadAddresses.isNotEmpty()) {
                     return threadAddresses.first()
                 }
@@ -207,8 +287,11 @@ class SmsContentObserver(
     val observerStartTime: Long = System.currentTimeMillis()
 
     init {
-        // Initialize lastProcessedSmsId and lastProcessedMmsId to latest existing message on startup
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "READ_SMS permission not granted. Skipping initial max ID initialization.")
+                return@launch
+            }
             try {
                 val smsCursor = context.contentResolver.query(
                     Uri.parse("content://sms"),
@@ -227,6 +310,9 @@ class SmsContentObserver(
                     }
                 }
                 Log.d(TAG, "Initialized initialMaxSmsId=$initialMaxSmsId, lastProcessedSmsId=${lastProcessedSmsId.get()}, observerStartTime=$observerStartTime")
+                Log.d(RCS_LOG_TAG, "Initialized SMS/RCS observer: initialMaxSmsId=$initialMaxSmsId, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed SMS pointer", e)
             }
@@ -249,6 +335,9 @@ class SmsContentObserver(
                     }
                 }
                 Log.d(TAG, "Initialized initialMaxMmsId=$initialMaxMmsId, lastProcessedMmsId=${lastProcessedMmsId.get()}, observerStartTime=$observerStartTime")
+                Log.d(RCS_LOG_TAG, "Initialized MMS observer: initialMaxMmsId=$initialMaxMmsId, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed MMS pointer", e)
             }
@@ -257,13 +346,55 @@ class SmsContentObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
+        Log.d(RCS_LOG_TAG, "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
+        pollLatestSms()
+        pollLatestMms()
+    }
+
+    override fun onChange(selfChange: Boolean) {
+        super.onChange(selfChange)
+        Log.d(RCS_LOG_TAG, "ContentObserver onChange fired (no URI), selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
     }
 
     private fun pollLatestSms() {
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestSms.")
+                return@launch
+            }
             try {
+                if (lastProcessedSmsId.get() == -1L) {
+                    try {
+                        val smsCursor = context.contentResolver.query(
+                            Uri.parse("content://sms"),
+                            arrayOf(Telephony.Sms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        smsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxSmsId = maxId
+                                    lastProcessedSmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxSmsId = 0L
+                                lastProcessedSmsId.set(0L)
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed SMS pointer", e)
+                        return@launch
+                    }
+                }
+
                 val currentLastId = lastProcessedSmsId.get()
                 val cursor = context.contentResolver.query(
                     Uri.parse("content://sms"),
@@ -282,15 +413,20 @@ class SmsContentObserver(
 
                 cursor?.use {
                     if (it.count == 0) {
-                        Log.d(TAG, "No new SMS messages to process (lastProcessedSmsId=$currentLastId)")
+                        Log.d(TAG, "No new SMS/RCS messages to process (lastProcessedSmsId=$currentLastId)")
                         return@launch
                     }
+
+                    Log.d(RCS_LOG_TAG, "Polling content://sms: found ${it.count} new entries (lastProcessedSmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
+                    val specificHour = settingsRepository.specificTimeHourFlow.first()
+                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
@@ -305,7 +441,7 @@ class SmsContentObserver(
                         val id = if (idIndex != -1) it.getLong(idIndex) else 0L
                         val rawAddress = if (addressIndex != -1) it.getString(addressIndex) else null
                         val body = if (bodyIndex != -1) it.getString(bodyIndex) else null
-                        val date = if (dateIndex != -1) it.getLong(dateIndex) else System.currentTimeMillis()
+                        val rawDate = if (dateIndex != -1) it.getLong(dateIndex) else System.currentTimeMillis()
                         val type = if (typeIndex != -1) it.getInt(typeIndex) else 1
                         val threadId = if (threadIdIndex != -1) it.getLong(threadIdIndex) else null
 
@@ -316,42 +452,46 @@ class SmsContentObserver(
 
                         lastProcessedSmsId.updateAndGet { current -> maxOf(current, id) }
 
-                        if (!isNewMessage(date, observerStartTime, id, initialMaxSmsId)) {
-                            Log.d(TAG, "Skipping historical SMS Message ID $id (date=$date, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
+                        val dateMs = normalizeSmsTimestamp(rawDate)
+
+                        Log.d(RCS_LOG_TAG, "Detected SMS/RCS message entry: id=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
+
+                        if (!isNewMessage(dateMs, observerStartTime, id, initialMaxSmsId)) {
+                            Log.d(RCS_LOG_TAG, "Skipping historical SMS/RCS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
                             continue
                         }
 
                         val resolvedAddress = resolveAddress(context, rawAddress, threadId)
 
-                        if (resolvedAddress.isNullOrEmpty()) {
-                            Log.d(TAG, "SMS address could not be resolved for message $id. Skipping.")
-                            continue
-                        }
-
-                        when (type) {
-                            Telephony.Sms.MESSAGE_TYPE_INBOX -> {
-                                Log.d(TAG, "Processing INCOMING SMS from $resolvedAddress (id: $id, date: $date)")
-                                processIncomingMessage(
-                                    senderAddress = resolvedAddress,
-                                    body = body ?: "",
-                                    timestampMs = date,
-                                    sourceTag = "SMS",
-                                    savedContactsOnly = savedContactsOnly,
-                                    defaultDelay = defaultDelay,
-                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                    mutableContactSettings = mutableContactSettings
-                                )
-                            }
-                            Telephony.Sms.MESSAGE_TYPE_SENT -> {
-                                Log.d(TAG, "Processing OUTGOING SMS to $resolvedAddress (id: $id)")
-                                processOutgoingMessage(resolvedAddress)
-                            }
-                            else -> {
-                                Log.d(TAG, "Unhandled SMS type $type for message $id")
+                        if (resolvedAddress != null) {
+                            // DO NOT filter out messages where protocol is null or 0 (RCS written by Google Messages often has protocol == null)
+                            when (type) {
+                                Telephony.Sms.MESSAGE_TYPE_INBOX -> {
+                                    Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
+                                    processIncomingMessage(
+                                        senderAddress = resolvedAddress,
+                                        body = body ?: "",
+                                        timestampMs = dateMs,
+                                        sourceTag = "RCS/SMS",
+                                        savedContactsOnly = savedContactsOnly,
+                                        defaultDelay = defaultDelay,
+                                        defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                        mutableContactSettings = mutableContactSettings
+                                    )
+                                }
+                                Telephony.Sms.MESSAGE_TYPE_SENT -> {
+                                    Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
+                                    processOutgoingMessage(resolvedAddress)
+                                }
+                                else -> {
+                                    Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
+                                }
                             }
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling SMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling SMS in ContentObserver", e)
             }
@@ -360,7 +500,41 @@ class SmsContentObserver(
 
     private fun pollLatestMms() {
         scope.launch {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestMms.")
+                return@launch
+            }
             try {
+                if (lastProcessedMmsId.get() == -1L) {
+                    try {
+                        val mmsCursor = context.contentResolver.query(
+                            Uri.parse("content://mms"),
+                            arrayOf(Telephony.Mms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        mmsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Mms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxMmsId = maxId
+                                    lastProcessedMmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxMmsId = 0L
+                                lastProcessedMmsId.set(0L)
+                            }
+                        }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed MMS pointer", e)
+                        return@launch
+                    }
+                }
+
                 val currentLastId = lastProcessedMmsId.get()
                 val cursor = context.contentResolver.query(
                     Uri.parse("content://mms"),
@@ -382,6 +556,8 @@ class SmsContentObserver(
                         Log.d(TAG, "No new MMS messages to process (lastProcessedMmsId=$currentLastId)")
                         return@launch
                     }
+
+                    Log.d(RCS_LOG_TAG, "Polling content://mms: found ${it.count} new entries (lastProcessedMmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
@@ -415,8 +591,10 @@ class SmsContentObserver(
 
                         val dateMs = normalizeMmsTimestamp(rawDate)
 
+                        Log.d(RCS_LOG_TAG, "Detected MMS entry: id=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
+
                         if (!isNewMessage(dateMs, observerStartTime, id, initialMaxMmsId)) {
-                            Log.d(TAG, "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
+                            Log.d(RCS_LOG_TAG, "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
                             continue
                         }
 
@@ -425,41 +603,42 @@ class SmsContentObserver(
 
                         if (isIncoming) {
                             val senders = getMmsAddresses(id, PDU_HEADER_FROM)
-                            val rawSender = senders.firstOrNull()
-                            val sender = resolveAddress(context, rawSender, threadId)
-                            if (sender == null) {
-                                Log.d(TAG, "MMS sender address is null or empty for message $id. Skipping.")
-                                continue
+                            var senderAddress = senders.firstOrNull()
+                            if (senderAddress.isNullOrBlank() && threadId != null && threadId > 0) {
+                                val threadAddrs = getAddressesForThread(context, threadId)
+                                senderAddress = threadAddrs.firstOrNull()
                             }
-                            Log.d(TAG, "Processing INCOMING MMS from $sender (id: $id, date: $dateMs)")
-
-                            val body = extractMmsBody(id, subject)
-
-                            processIncomingMessage(
-                                senderAddress = sender,
-                                body = body,
-                                timestampMs = dateMs,
-                                sourceTag = "MMS",
-                                savedContactsOnly = savedContactsOnly,
-                                defaultDelay = defaultDelay,
-                                defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                mutableContactSettings = mutableContactSettings
-                            )
+                            val resolvedSender = senderAddress?.let { resolveAddress(context, it, threadId) }
+                            if (resolvedSender != null) {
+                                val body = extractMmsBody(id, subject)
+                                processIncomingMessage(
+                                    senderAddress = resolvedSender,
+                                    body = body,
+                                    timestampMs = dateMs,
+                                    sourceTag = "MMS",
+                                    savedContactsOnly = savedContactsOnly,
+                                    defaultDelay = defaultDelay,
+                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                    mutableContactSettings = mutableContactSettings
+                                )
+                            }
                         } else if (isOutgoing) {
                             var recipients = getMmsAddresses(id, PDU_HEADER_TO)
                             if (recipients.isEmpty() && threadId != null && threadId > 0) {
                                 recipients = getAddressesForThread(context, threadId)
                             }
                             val resolvedRecipients = recipients.mapNotNull { recipient -> resolveAddress(context, recipient, threadId) }.distinct()
-                            Log.d(TAG, "Processing OUTGOING MMS (id: $id) to recipients: $resolvedRecipients")
+                            Log.d(RCS_LOG_TAG, "Processing OUTGOING MMS (id: $id) to recipients: $resolvedRecipients")
                             for (recipient in resolvedRecipients) {
                                 processOutgoingMessage(recipient)
                             }
                         } else {
-                            Log.d(TAG, "Unhandled MMS msg_box $msgBox, m_type $mType for message $id")
+                            Log.d(RCS_LOG_TAG, "Unhandled MMS msg_box $msgBox, m_type $mType for message $id")
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling MMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling MMS in ContentObserver", e)
             }
@@ -481,7 +660,7 @@ class SmsContentObserver(
 
         val isSaved = if (savedContactsOnly) ContactSyncHelper.isContactSaved(context, senderAddress) else true
         if (!shouldProcessSms(savedContactsOnly, isSaved)) {
-            Log.d(TAG, "Skipping incoming $sourceTag from $senderAddress: savedContactsOnly is true and contact is not saved in contacts.")
+            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: savedContactsOnly is true and contact is not saved in contacts.")
             return
         }
 
@@ -496,7 +675,7 @@ class SmsContentObserver(
         }
 
         if (contactSetting == null) {
-            val contactId = "${sourceTag.lowercase()}_${System.currentTimeMillis()}_${normalizedAddress.takeLast(6)}"
+            val contactId = "${sourceTag.lowercase().replace('/', '_')}_${System.currentTimeMillis()}_${normalizedAddress.takeLast(6)}"
             val displayName = getContactName(context, senderAddress)
             contactSetting = ContactSettingEntity(
                 contactId = contactId,
@@ -507,27 +686,50 @@ class SmsContentObserver(
             )
             contactDao.insertContactSetting(contactSetting)
             mutableContactSettings.add(contactSetting)
-            Log.d(TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
+            Log.d(RCS_LOG_TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
         }
 
-        if (!contactSetting.isReminderEnabled) {
-            Log.d(TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName}")
+        val group = contactSetting.groupId?.let { database.contactGroupDao().getGroupById(it).first() }
+        val isReminderEnabled = if (contactSetting.isReminderEnabled) {
+            group?.isReminderEnabled ?: true
+        } else {
+            false
+        }
+
+        if (!isReminderEnabled) {
+            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact or group")
             return
         }
 
-        val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+        val delayMinutes = when {
+            contactSetting.customDelayMinutes != null -> {
+                if (group != null && contactSetting.groupAssignedAt > contactSetting.customDelayUpdatedAt) {
+                    group.customDelayMinutes
+                } else {
+                    contactSetting.customDelayMinutes
+                }
+            }
+            group != null -> {
+                group.customDelayMinutes
+            }
+            else -> {
+                defaultDelay
+            }
+        }
         val triggerTime = timestampMs + (delayMinutes * 60 * 1000L)
+
+        val messageText = if (body.isNotBlank()) body else "[RCS message]"
 
         val reminder = ReminderEntity(
             phoneNumber = senderAddress,
             contactName = contactSetting.displayName,
-            messageBody = body,
+            messageBody = messageText,
             timestamp = timestampMs,
             triggerTime = triggerTime,
             status = "PENDING"
         )
         val reminderId = reminderDao.insertReminder(reminder)
-        Log.d(TAG, "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime")
+        Log.d(RCS_LOG_TAG, "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime")
 
         scheduleReminderAlarm(context, reminderId, triggerTime)
     }
@@ -545,10 +747,13 @@ class SmsContentObserver(
                 reminderDao.dismissRemindersForNumber(inputDigits.takeLast(10))
             }
         }
-        Log.d(TAG, "Dismissed pending reminders for recipient: $recipientAddress")
+        Log.d(RCS_LOG_TAG, "Dismissed pending reminders for recipient: $recipientAddress")
     }
 
     private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
         val addresses = mutableListOf<String>()
         try {
             val addrUri = Uri.parse("content://mms/$mmsId/addr")
@@ -570,6 +775,8 @@ class SmsContentObserver(
                     }
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
         }
@@ -577,6 +784,9 @@ class SmsContentObserver(
     }
 
     private fun extractMmsBody(mmsId: Long, subject: String?): String {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return determineMmsBody(null, subject)
+        }
         var extractedText: String? = null
         try {
             val partUri = Uri.parse("content://mms/$mmsId/part")
@@ -620,6 +830,8 @@ class SmsContentObserver(
                                 if (!streamText.isNullOrBlank()) {
                                     textParts.add(streamText)
                                 }
+                            } catch (e: SecurityException) {
+                                Log.w(TAG, "SecurityException reading text part stream for part $partId", e)
                             } catch (e: Exception) {
                                 Log.w(TAG, "Failed to read text part stream for part $partId", e)
                             }
@@ -630,6 +842,8 @@ class SmsContentObserver(
                     extractedText = textParts.joinToString("\n")
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException extracting MMS body for message $mmsId", e)
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting MMS body for message $mmsId", e)
         }
@@ -638,6 +852,9 @@ class SmsContentObserver(
     }
 
     private fun getContactName(context: Context, phoneNumber: String): String {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return phoneNumber
+        }
         return try {
             val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
             context.contentResolver.query(
@@ -652,6 +869,8 @@ class SmsContentObserver(
                     }
                 }
             }
+            phoneNumber
+        } catch (_: SecurityException) {
             phoneNumber
         } catch (_: Exception) {
             phoneNumber
@@ -677,6 +896,7 @@ class SmsContentObserver(
                 pendingIntent
             )
             Log.d(TAG, "Scheduled exact alarm for reminder ID $reminderId at $triggerTime")
+            Log.d(RCS_LOG_TAG, "Scheduled alarm for reminder ID $reminderId at triggerTime $triggerTime")
         } catch (e: SecurityException) {
             Log.w(TAG, "SecurityException setting exact alarm, falling back to standard alarm", e)
             try {

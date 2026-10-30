@@ -7,14 +7,17 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.onread.data.dao.ContactDao
+import com.example.onread.data.dao.ContactGroupDao
 import com.example.onread.data.dao.ReminderDao
+import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 
-@Database(entities = [ContactSettingEntity::class, ReminderEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, ContactGroupEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun reminderDao(): ReminderDao
+    abstract fun contactGroupDao(): ContactGroupDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -35,6 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration(true)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
