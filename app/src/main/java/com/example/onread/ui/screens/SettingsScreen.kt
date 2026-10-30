@@ -9,10 +9,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.core.app.ActivityCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -25,6 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.onread.ui.viewmodel.SettingsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -83,6 +84,12 @@ fun SettingsScreen(
         )
     }
 
+    var isNotificationListenerGranted by remember {
+        mutableStateOf(
+            NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+        )
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, alarmManager) {
         val observer = LifecycleEventObserver { _, event ->
@@ -92,6 +99,7 @@ fun SettingsScreen(
                         exactAlarmGranted = alarmManager.canScheduleExactAlarms()
                     }
                 }
+                isNotificationListenerGranted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -218,6 +226,66 @@ fun SettingsScreen(
                 }
             }
 
+            // Notification Listener Permission Card (RCS & Messages)
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Notification Listener (RCS & Messages)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Allows ONread to capture 100% of RCS text messages from Google Messages and other messaging apps.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (isNotificationListenerGranted) {
+                                Icon(
+                                    Icons.Rounded.CheckCircle,
+                                    contentDescription = "Notification Access Granted",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Rounded.Error,
+                                    contentDescription = "Notification Access Not Granted",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
+
+                        if (!isNotificationListenerGranted) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val intent = Intent(Settings.ACTION_SETTINGS)
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Grant Notification Access")
+                            }
+                        }
+                    }
+                }
+            }
+
             // Runtime Permissions Card
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -289,5 +357,3 @@ fun SettingsScreen(
         }
     }
 }
-
-
