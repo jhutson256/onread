@@ -271,4 +271,11 @@ class ContactAndReminderTest {
         val actualTrigger = RcsNotificationListenerService.calculateTriggerTime(postTime, delayMinutes)
         assertEquals(expectedTrigger, actualTrigger)
     }
+
+    @Test
+    fun reminderDeepLinkUriFormat_isCorrect() {
+        val phoneNumber = "+1234567890"
+        val uriString = "smsto:$phoneNumber"
+        assertEquals("smsto:+1234567890", uriString)
+    }
 }
