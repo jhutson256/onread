@@ -30,6 +30,7 @@ class SmsContentObserver(
 
     companion object {
         private const val TAG = "SmsContentObserver"
+        private const val RCS_LOG_TAG = "RcsContentObserver"
 
         fun shouldProcessSms(savedContactsOnly: Boolean, isContactSaved: Boolean): Boolean {
             return !savedContactsOnly || isContactSaved

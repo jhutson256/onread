@@ -28,6 +28,16 @@ class OnreadApplication : Application() {
             true,
             smsContentObserver
         )
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms"),
+            true,
+            smsContentObserver
+        )
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms-sms"),
+            true,
+            smsContentObserver
+        )
     }
 
     override fun onTerminate() {
