@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.onread.data.dao.ContactDao
 import com.example.onread.data.dao.ContactGroupDao
 import com.example.onread.data.dao.ReminderDao
@@ -18,6 +20,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun contactGroupDao(): ContactGroupDao
 
     companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reminders ADD COLUMN snoozeCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -28,6 +36,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "text_reminder_database"
                 )
+                    .addMigrations(MIGRATION_1_2)
+                    .fallbackToDestructiveMigration(true)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

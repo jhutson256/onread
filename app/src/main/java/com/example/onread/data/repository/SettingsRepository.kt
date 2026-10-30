@@ -22,6 +22,9 @@ class SettingsRepository(private val context: Context) {
         val SPECIFIC_TIME_MINUTE = intPreferencesKey("specific_time_minute")
         val HAS_SEEN_ONBOARDING = booleanPreferencesKey("has_seen_onboarding")
         val DEFAULT_CONTACT_REMINDER_ENABLED = booleanPreferencesKey("default_contact_reminder_enabled")
+        val SNOOZE_ENABLED = booleanPreferencesKey("snooze_enabled")
+        val SNOOZE_DURATION_MINUTES = intPreferencesKey("default_snooze_duration_minutes")
+        val MAX_SNOOZE_COUNT = intPreferencesKey("max_snooze_count")
     }
 
     val colorThemeFlow: Flow<String> = context.dataStore.data
@@ -61,6 +64,21 @@ class SettingsRepository(private val context: Context) {
     val defaultContactReminderEnabled: Flow<Boolean> = context.dataStore.data
         .map { preferences ->
             preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] ?: true
+        }
+
+    val snoozeEnabledFlow: Flow<Boolean> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.SNOOZE_ENABLED] ?: true
+        }
+
+    val snoozeDurationMinutesFlow: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.SNOOZE_DURATION_MINUTES] ?: 15
+        }
+
+    val maxSnoozeCountFlow: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            preferences[PreferencesKeys.MAX_SNOOZE_COUNT] ?: 3
         }
 
     suspend fun setOnboardingCompleted(enableReminders: Boolean) {
@@ -103,6 +121,24 @@ class SettingsRepository(private val context: Context) {
     suspend fun updateDefaultContactReminderEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.DEFAULT_CONTACT_REMINDER_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateSnoozeEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SNOOZE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun updateSnoozeDurationMinutes(minutes: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SNOOZE_DURATION_MINUTES] = minutes
+        }
+    }
+
+    suspend fun updateMaxSnoozeCount(count: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.MAX_SNOOZE_COUNT] = count
         }
     }
 }

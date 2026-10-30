@@ -24,6 +24,18 @@ class OnreadApplication : Application() {
             database,
         )
 
+        mmsRcsContentObserver = MmsRcsContentObserver(
+            Handler(Looper.getMainLooper()),
+            this,
+            database,
+        )
+
+        contentResolver.registerContentObserver(
+            Uri.parse("content://mms-sms"),
+            true,
+            smsContentObserver,
+        )
+        contentResolver.registerContentObserver(
         val urisToObserve = listOf(
             Uri.parse("content://sms"),
             Uri.parse("content://mms"),
