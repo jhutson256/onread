@@ -5,16 +5,13 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.onread.data.dao.ContactDao
-import com.example.onread.data.dao.ContactGroupDao
 import com.example.onread.data.dao.ReminderDao
-import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 
-@Database(entities = [ContactSettingEntity::class, ContactGroupEntity::class, ReminderEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ContactSettingEntity::class, ReminderEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
-    abstract fun contactGroupDao(): ContactGroupDao
     abstract fun reminderDao(): ReminderDao
 
     companion object {
