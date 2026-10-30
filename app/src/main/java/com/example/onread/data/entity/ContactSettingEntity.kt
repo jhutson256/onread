@@ -14,4 +14,7 @@ data class ContactSettingEntity(
     val customSpecificHour: Int? = null,
     val customSpecificMinute: Int? = null,
     val groupId: Long? = null
+    val customDelayUpdatedAt: Long = 0L,
+    val groupId: Long? = null,
+    val groupAssignedAt: Long = 0L
 )
