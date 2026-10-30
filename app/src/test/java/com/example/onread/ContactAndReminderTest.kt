@@ -4,6 +4,7 @@ import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.observer.SmsContentObserver
+import com.example.onread.service.RcsNotificationListenerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
