@@ -4,66 +4,54 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.onread.data.database.AppDatabase
-import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
-import com.example.onread.data.repository.ContactGroupRepository
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.repository.ContactRepository
+import com.example.onread.data.repository.GroupRepository
+import com.example.onread.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class GroupsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
-    private val groupRepository = ContactGroupRepository(database.contactGroupDao(), database.contactDao())
+    private val groupRepository = GroupRepository(database.groupDao())
     private val contactRepository = ContactRepository(database.contactDao())
 
-    val groups: StateFlow<List<ContactGroupEntity>> = groupRepository.allGroups
-        .map { list -> list.sortedBy { it.name.lowercase() } }
+    val groups: StateFlow<List<GroupEntity>> = groupRepository.allGroups
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
-        .map { list -> list.sortedBy { it.displayName.lowercase() } }
+    val contacts: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun addGroup(name: String, isReminderEnabled: Boolean, customDelayMinutes: Int) {
+    val defaultDelayMinutes: StateFlow<Int> = SettingsRepository(application).defaultDelayMinutesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
+
+    fun insertOrUpdateGroup(group: GroupEntity) {
         viewModelScope.launch {
-            groupRepository.insertGroup(
-                ContactGroupEntity(
-                    name = name,
-                    isReminderEnabled = isReminderEnabled,
-                    customDelayMinutes = customDelayMinutes
-                )
-            )
+            groupRepository.insertOrUpdateGroup(group)
         }
     }
 
-    fun updateGroup(group: ContactGroupEntity) {
+    fun deleteGroup(group: GroupEntity) {
         viewModelScope.launch {
-            groupRepository.updateGroup(group)
-        }
-    }
-
-    fun deleteGroup(group: ContactGroupEntity) {
-        viewModelScope.launch {
+            val contactList = contactRepository.allContactSettings.first()
+            for (contact in contactList) {
+                if (contact.groupId == group.id) {
+                    contactRepository.insertOrUpdateContactSetting(contact.copy(groupId = null))
+                }
+            }
             groupRepository.deleteGroup(group)
         }
     }
 
-    fun assignContactToGroup(contactId: String, groupId: Long?) {
+    fun assignContactToGroup(contactId: String, groupId: String?) {
         viewModelScope.launch {
-            val contact = database.contactDao().getContactSettingById(contactId).first()
+            val contact = contactRepository.getContactSettingById(contactId).first()
             if (contact != null) {
-                val groupChanged = contact.groupId != groupId
-                val now = System.currentTimeMillis()
-                contactRepository.insertOrUpdateContactSetting(
-                    contact.copy(
-                        groupId = groupId,
-                        groupAssignedAt = if (groupChanged) now else contact.groupAssignedAt
-                    )
-                )
+                contactRepository.insertOrUpdateContactSetting(contact.copy(groupId = groupId))
             }
         }
     }

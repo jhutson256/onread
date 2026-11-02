@@ -4,10 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.onread.data.database.AppDatabase
-import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
-import com.example.onread.data.repository.ContactGroupRepository
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.repository.ContactRepository
+import com.example.onread.data.repository.GroupRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.util.ContactSyncHelper
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,27 +23,19 @@ import kotlinx.coroutines.withContext
 class ContactsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val contactRepository = ContactRepository(database.contactDao())
-    private val groupRepository = ContactGroupRepository(database.contactGroupDao(), database.contactDao())
+    private val groupRepository = GroupRepository(database.groupDao())
     private val settingsRepository = SettingsRepository(application)
 
     val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
         .map { list -> list.sortedBy { it.displayName.lowercase() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val groups: StateFlow<List<ContactGroupEntity>> = groupRepository.allGroups
+    val groups: StateFlow<List<GroupEntity>> = groupRepository.allGroups
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val defaultDelayMinutes: StateFlow<Int> = settingsRepository.defaultDelayMinutesFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
 
-    val useSpecificTime: StateFlow<Boolean> = settingsRepository.useSpecificTimeFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    val globalSpecificHour: StateFlow<Int> = settingsRepository.specificTimeHourFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 18)
-
-    val globalSpecificMinute: StateFlow<Int> = settingsRepository.specificTimeMinuteFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing = _isSyncing.asStateFlow()
 

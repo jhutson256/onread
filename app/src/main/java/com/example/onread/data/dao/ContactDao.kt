@@ -20,6 +20,9 @@ interface ContactDao {
     @Query("SELECT * FROM contact_settings WHERE phoneNumber = :phoneNumber")
     fun getContactSettingByPhoneNumber(phoneNumber: String): Flow<ContactSettingEntity?>
 
+    @Query("SELECT * FROM contact_settings WHERE groupId = :groupId ORDER BY LOWER(displayName) ASC")
+    fun getContactsByGroupId(groupId: String): Flow<List<ContactSettingEntity>>
+
     @Query("UPDATE contact_settings SET groupId = NULL WHERE groupId = :groupId")
     suspend fun removeGroupFromContacts(groupId: Long)
 
