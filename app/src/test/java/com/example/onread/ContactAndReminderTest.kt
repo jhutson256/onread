@@ -289,8 +289,8 @@ class ContactAndReminderTest {
         )
         assertNull(contact.groupId)
 
-        val updated = contact.copy(groupId = 5L)
-        assertEquals(5L, updated.groupId)
+        val updated = contact.copy(groupId = "5")
+        assertEquals("5", updated.groupId)
     }
 
     @Test
