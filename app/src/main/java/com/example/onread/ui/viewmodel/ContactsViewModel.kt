@@ -12,6 +12,7 @@ import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.util.ContactSyncHelper
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -23,7 +24,7 @@ import kotlinx.coroutines.withContext
 class ContactsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
     private val contactRepository = ContactRepository(database.contactDao())
-    private val groupRepository = GroupRepository(database.groupDao())
+    private val groupRepository = GroupRepository(database.groupDao(), database.contactDao())
     private val settingsRepository = SettingsRepository(application)
 
     val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
@@ -62,7 +63,28 @@ class ContactsViewModel(application: Application) : AndroidViewModel(application
 
     fun updateContactSetting(setting: ContactSettingEntity) {
         viewModelScope.launch {
+            if (setting.groupId != null) {
+                val group = groupRepository.getGroupById(setting.groupId).first()
+                if (group != null) {
+                    database.contactDao().assignContactToGroupWithSettings(
+                        contactId = setting.contactId,
+                        groupId = group.id,
+                        isReminderEnabled = group.isReminderEnabled,
+                        customDelayMinutes = group.customDelayMinutes,
+                        useSpecificTime = group.useSpecificTime,
+                        specificHour = group.specificHour,
+                        specificMinute = group.specificMinute
+                    )
+                    return@launch
+                }
+            }
             contactRepository.insertOrUpdateContactSetting(setting)
+        }
+    }
+
+    fun updateGroup(group: GroupEntity) {
+        viewModelScope.launch {
+            groupRepository.updateGroup(group)
         }
     }
 }

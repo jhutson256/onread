@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 class GroupsViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getDatabase(application)
-    private val groupRepository = GroupRepository(database.groupDao())
+    private val groupRepository = GroupRepository(database.groupDao(), database.contactDao())
     private val contactRepository = ContactRepository(database.contactDao())
 
     val groups: StateFlow<List<GroupEntity>> = groupRepository.allGroups
@@ -35,12 +35,18 @@ class GroupsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateGroup(group: GroupEntity) {
+        viewModelScope.launch {
+            groupRepository.updateGroup(group)
+        }
+    }
+
     fun deleteGroup(group: GroupEntity) {
         viewModelScope.launch {
             val contactList = contactRepository.allContactSettings.first()
             for (contact in contactList) {
                 if (contact.groupId == group.id) {
-                    contactRepository.insertOrUpdateContactSetting(contact.copy(groupId = null))
+                    database.contactDao().removeGroupFromContacts(group.id)
                 }
             }
             groupRepository.deleteGroup(group)
@@ -51,7 +57,40 @@ class GroupsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val contact = contactRepository.getContactSettingById(contactId).first()
             if (contact != null) {
-                contactRepository.insertOrUpdateContactSetting(contact.copy(groupId = groupId))
+                if (groupId != null) {
+                    val group = groupRepository.getGroupById(groupId).first()
+                    if (group != null) {
+                        database.contactDao().assignContactToGroupWithSettings(
+                            contactId = contactId,
+                            groupId = group.id,
+                            isReminderEnabled = group.isReminderEnabled,
+                            customDelayMinutes = group.customDelayMinutes,
+                            useSpecificTime = group.useSpecificTime,
+                            specificHour = group.specificHour,
+                            specificMinute = group.specificMinute
+                        )
+                    } else {
+                        database.contactDao().assignContactToGroupWithSettings(
+                            contactId = contactId,
+                            groupId = null,
+                            isReminderEnabled = contact.isReminderEnabled,
+                            customDelayMinutes = contact.customDelayMinutes,
+                            useSpecificTime = contact.useSpecificTime,
+                            specificHour = contact.specificHour,
+                            specificMinute = contact.specificMinute
+                        )
+                    }
+                } else {
+                    database.contactDao().assignContactToGroupWithSettings(
+                        contactId = contactId,
+                        groupId = null,
+                        isReminderEnabled = contact.isReminderEnabled,
+                        customDelayMinutes = contact.customDelayMinutes,
+                        useSpecificTime = contact.useSpecificTime,
+                        specificHour = contact.specificHour,
+                        specificMinute = contact.specificMinute
+                    )
+                }
             }
         }
     }

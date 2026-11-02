@@ -29,6 +29,9 @@ interface ReminderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: ReminderEntity): Long
 
+    @Query("SELECT * FROM reminders WHERE timestamp >= :cutoffTime")
+    suspend fun getRemindersSince(cutoffTime: Long): List<ReminderEntity>
+
     @Update
     suspend fun updateReminder(reminder: ReminderEntity)
 

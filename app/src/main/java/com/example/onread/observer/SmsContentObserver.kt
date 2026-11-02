@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
@@ -719,7 +720,12 @@ class SmsContentObserver(
             triggerTime = triggerTime,
             status = "PENDING"
         )
-        val reminderId = reminderDao.insertReminder(reminder)
+        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderId = reminderRepository.insertReminder(reminder)
+        if (reminderId <= 0L) {
+            Log.d(RCS_LOG_TAG, "Skipping duplicate incoming $sourceTag from $senderAddress (duplicate within 60s)")
+            return
+        }
         Log.d(RCS_LOG_TAG, "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime")
 
         scheduleReminderAlarm(context, reminderId, triggerTime)

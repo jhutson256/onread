@@ -43,35 +43,33 @@ object ReminderSchedulingHelper {
         defaultDelayMinutes: Int,
         timestampMs: Long
     ): ResolvedSettings {
-        // Inheritance: if contact is assigned to a group and doesn't override specific time/delay or reminder enabled, inherit from group.
-        // Let's implement robust inheritance rules:
-        // - isReminderEnabled: if contact has default or inherits, or group is disabled. If group is disabled, reminder is disabled (unless contact explicitly enables).
-        val isEnabled = if (group != null && contact.groupId == group.id) {
-            contact.isReminderEnabled && group.isReminderEnabled
+        val hasGroup = group != null && contact.groupId == group.id
+
+        val isEnabled = if (hasGroup) {
+            group.isReminderEnabled
         } else {
             contact.isReminderEnabled
         }
 
-        // useSpecificTime: if contact overrides or group applies
-        val useSpecific = if (group != null && contact.groupId == group.id) {
-            contact.useSpecificTime || group.useSpecificTime
+        val useSpecific = if (hasGroup) {
+            group.useSpecificTime
         } else {
             contact.useSpecificTime
         }
 
-        val specificHour = if (group != null && contact.groupId == group.id && !contact.useSpecificTime && group.useSpecificTime) {
+        val specificHour = if (hasGroup) {
             group.specificHour
         } else {
             contact.specificHour
         }
 
-        val specificMinute = if (group != null && contact.groupId == group.id && !contact.useSpecificTime && group.useSpecificTime) {
+        val specificMinute = if (hasGroup) {
             group.specificMinute
         } else {
             contact.specificMinute
         }
 
-        val delay = if (group != null && contact.groupId == group.id && contact.customDelayMinutes == null) {
+        val delay = if (hasGroup) {
             group.customDelayMinutes
         } else {
             contact.customDelayMinutes
