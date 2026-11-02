@@ -20,6 +20,9 @@ interface ContactDao {
     @Query("SELECT * FROM contact_settings WHERE phoneNumber = :phoneNumber")
     fun getContactSettingByPhoneNumber(phoneNumber: String): Flow<ContactSettingEntity?>
 
+    @Query("SELECT * FROM contact_settings WHERE groupId = :groupId ORDER BY LOWER(displayName) ASC")
+    fun getContactsByGroupId(groupId: String): Flow<List<ContactSettingEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContactSetting(setting: ContactSettingEntity)
 

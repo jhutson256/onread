@@ -1,14 +1,17 @@
 package com.example.onread
 
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.observer.SmsContentObserver
 import com.example.onread.service.RcsNotificationListenerService
+import com.example.onread.util.ReminderSchedulingHelper
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class ContactAndReminderTest {
 
@@ -277,5 +280,92 @@ class ContactAndReminderTest {
         val phoneNumber = "+1234567890"
         val uriString = "smsto:$phoneNumber"
         assertEquals("smsto:+1234567890", uriString)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_specificTimeCalculation() {
+        val cal = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 1, 10, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val messageTime = cal.timeInMillis
+
+        // Specific time 14:30 today (hasn't passed yet if message is at 10:00)
+        val triggerToday = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = true,
+            specificHour = 14,
+            specificMinute = 30,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
+
+        val expectedToday = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 1, 14, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        assertEquals(expectedToday, triggerToday)
+
+        // Specific time 08:00 today (already passed if message is at 10:00 -> should be tomorrow 08:00)
+        val triggerTomorrow = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = true,
+            specificHour = 8,
+            specificMinute = 0,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
+
+        val expectedTomorrow = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 2, 8, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        assertEquals(expectedTomorrow, triggerTomorrow)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_fallbackDelay() {
+        val messageTime = 1000000000000L
+        val trigger = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = false,
+            specificHour = 9,
+            specificMinute = 0,
+            customDelayMinutes = 45,
+            defaultDelayMinutes = 30
+        )
+
+        assertEquals(messageTime + (45 * 60 * 1000L), trigger)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_groupInheritance() {
+        val group = GroupEntity(
+            id = "g1",
+            name = "Work",
+            isReminderEnabled = true,
+            useSpecificTime = true,
+            specificHour = 17,
+            specificMinute = 0
+        )
+
+        val contact = ContactSettingEntity(
+            contactId = "c1",
+            phoneNumber = "+111",
+            displayName = "Boss",
+            groupId = "g1",
+            useSpecificTime = false // inherits from group
+        )
+
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contact,
+            group = group,
+            defaultDelayMinutes = 30,
+            timestampMs = 1000000000000L
+        )
+
+        assertTrue(resolved.isReminderEnabled)
     }
 }

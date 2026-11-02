@@ -1,35 +1,35 @@
 package com.example.onread.ui.screens
 
 import android.content.Intent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContactPhone
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
-import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.ui.NavDisplay
-import com.example.onread.ui.viewmodel.MainViewModel
-import kotlinx.serialization.Serializable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.ui.NavDisplay
 import com.example.onread.R
+import com.example.onread.ui.viewmodel.MainViewModel
+import kotlinx.serialization.Serializable
 
 @Serializable
 data object DashboardRoute
 
 @Serializable
 data object ContactsRoute
+
+@Serializable
+data object GroupsRoute
 
 @Serializable
 data object SettingsRoute
@@ -105,6 +105,17 @@ fun MainScreen(
                     label = { Text("Contacts") }
                 )
                 NavigationBarItem(
+                    selected = currentKey is GroupsRoute,
+                    onClick = {
+                        if (currentKey !is GroupsRoute) {
+                            backStack.clear()
+                            backStack.add(GroupsRoute)
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Group, contentDescription = "Groups") },
+                    label = { Text("Groups") }
+                )
+                NavigationBarItem(
                     selected = currentKey is SettingsRoute,
                     onClick = {
                         if (currentKey !is SettingsRoute) {
@@ -133,6 +144,9 @@ fun MainScreen(
                     }
                     is ContactsRoute -> NavEntry(key) {
                         ContactsScreen()
+                    }
+                    is GroupsRoute -> NavEntry(key) {
+                        GroupsScreen()
                     }
                     is SettingsRoute -> NavEntry(key) {
                         SettingsScreen()

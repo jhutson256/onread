@@ -19,6 +19,7 @@ import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
+import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -467,7 +468,6 @@ class SmsContentObserver(
 
                         Log.d(RCS_LOG_TAG, "Resolved address for message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
 
-                        // DO NOT filter out messages where protocol is null or 0 (RCS written by Google Messages often has protocol == null)
                         when (type) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> {
                                 Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
@@ -660,6 +660,7 @@ class SmsContentObserver(
     ) {
         val reminderDao = database.reminderDao()
         val contactDao = database.contactDao()
+        val groupDao = database.groupDao()
 
         val isSaved = if (savedContactsOnly) ContactSyncHelper.isContactSaved(context, senderAddress) else true
         if (!shouldProcessSms(savedContactsOnly, isSaved)) {
@@ -692,14 +693,22 @@ class SmsContentObserver(
             Log.d(RCS_LOG_TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
         }
 
-        if (!contactSetting.isReminderEnabled) {
-            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName}")
+        val groups = groupDao.getAllGroups().first()
+        val group = groups.find { it.id == contactSetting.groupId }
+
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contactSetting,
+            group = group,
+            defaultDelayMinutes = defaultDelay,
+            timestampMs = timestampMs
+        )
+
+        if (!resolved.isReminderEnabled) {
+            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName} or group")
             return
         }
 
-        val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
-        val triggerTime = timestampMs + (delayMinutes * 60 * 1000L)
-
+        val triggerTime = resolved.triggerTime
         val messageText = if (body.isNotBlank()) body else "[RCS message]"
 
         val reminder = ReminderEntity(
