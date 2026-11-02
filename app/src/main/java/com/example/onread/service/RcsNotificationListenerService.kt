@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
@@ -119,19 +120,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        // Deduplication check: ignore if pending reminder exists with same text for contact within 30s
-        val pendingReminders = reminderDao.getPendingReminders().first()
-        val isDuplicate = pendingReminders.any { pending ->
-            (pending.phoneNumber == contactSetting.phoneNumber || pending.contactName.equals(contactSetting.displayName, ignoreCase = true)) &&
-                    pending.messageBody == messageText &&
-                    Math.abs(pending.timestamp - postTime) < 30_000L
-        }
-
-        if (isDuplicate) {
-            Log.d(TAG, "Skipping duplicate notification reminder for ${contactSetting.displayName}")
-            return
-        }
-
         // Save/insert contact if not already saved in Room DB
         if (allContacts.none { it.contactId == contactSetting.contactId }) {
             contactDao.insertContactSetting(contactSetting)
@@ -149,7 +137,13 @@ class RcsNotificationListenerService : NotificationListenerService() {
             status = "PENDING"
         )
 
-        val reminderId = reminderDao.insertReminder(reminder)
+        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderId = reminderRepository.insertReminder(reminder)
+        if (reminderId <= 0L) {
+            Log.d(TAG, "Skipping duplicate notification reminder for ${contactSetting.displayName} (duplicate within 60s)")
+            return
+        }
+
         Log.d(TAG, "Inserted ReminderEntity ID $reminderId for RCS notification from ${contactSetting.displayName}")
 
         scheduleReminderAlarm(applicationContext, reminderId, triggerTime)
