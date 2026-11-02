@@ -50,6 +50,9 @@ fun SettingsScreen(
     val colorTheme by viewModel.colorTheme.collectAsState()
     val defaultDelayMinutes by viewModel.defaultDelayMinutes.collectAsState()
     val savedContactsOnly by viewModel.savedContactsOnly.collectAsState()
+    val useSpecificTime by viewModel.useSpecificTime.collectAsState()
+    val specificTimeHour by viewModel.specificTimeHour.collectAsState()
+    val specificTimeMinute by viewModel.specificTimeMinute.collectAsState()
 
     val permissionsList = remember {
         val list = mutableListOf(
@@ -169,28 +172,98 @@ fun SettingsScreen(
                 }
             }
 
-            // Default Reminders Setting Card
+            // Reminder Timing Mode Card (Delay vs Specific Time)
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Default Reminder Delay",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "$defaultDelayMinutes minutes",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
-                            value = defaultDelayMinutes.toFloat(),
-                            onValueChange = { viewModel.updateDefaultDelayMinutes(it.toInt()) },
-                            valueRange = 5f..120f,
-                            steps = 22
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Use Clock Based Reminders",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Trigger reminders at a fixed time of day instead of a delay after receipt.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = useSpecificTime,
+                                onCheckedChange = { viewModel.updateUseSpecificTime(it) }
+                            )
+                        }
+
+                        if (useSpecificTime) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Target Time",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val displayHour = if (specificTimeHour == 0) 12 else if (specificTimeHour > 12) specificTimeHour - 12 else specificTimeHour
+                                    val amPm = if (specificTimeHour >= 12) "PM" else "AM"
+                                    val formattedTime = String.format("%d:%02d %s", displayHour, specificTimeMinute, amPm)
+                                    Text(
+                                        text = formattedTime,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Button(
+                                    onClick = {
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, hourOfDay, minute ->
+                                                viewModel.updateSpecificTime(hourOfDay, minute)
+                                            },
+                                            specificTimeHour,
+                                            specificTimeMinute,
+                                            false
+                                        ).show()
+                                    }
+                                ) {
+                                    Text("Change Time")
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Default Reminder Delay",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "$defaultDelayMinutes minutes",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = defaultDelayMinutes.toFloat(),
+                                onValueChange = { viewModel.updateDefaultDelayMinutes(it.toInt()) },
+                                valueRange = 5f..120f,
+                                steps = 22
+                            )
+                        }
                     }
                 }
             }
