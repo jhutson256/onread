@@ -6,24 +6,35 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.example.onread.data.database.AppDatabase
+import com.example.onread.observer.MmsRcsContentObserver
 import com.example.onread.observer.SmsContentObserver
 import com.example.onread.util.NotificationHelper
 
 class OnreadApplication : Application() {
 
     private lateinit var smsContentObserver: SmsContentObserver
+    private lateinit var mmsRcsContentObserver: MmsRcsContentObserver
 
     override fun onCreate() {
         super.onCreate()
         NotificationHelper.createNotificationChannel(this)
 
         val database = AppDatabase.getDatabase(this)
+        
+        // Initialize observers
         smsContentObserver = SmsContentObserver(
             Handler(Looper.getMainLooper()),
             this,
-            database,
+            database
         )
 
+        mmsRcsContentObserver = MmsRcsContentObserver(
+            Handler(Looper.getMainLooper()),
+            this,
+            database
+        )
+
+        // List of URIs to observe for SMS/MMS
         val urisToObserve = listOf(
             Uri.parse("content://sms"),
             Uri.parse("content://mms"),
@@ -31,12 +42,13 @@ class OnreadApplication : Application() {
             Uri.parse("content://mms-sms/conversations")
         )
 
+        // Register SMS content observer for the URIs
         for (uri in urisToObserve) {
             try {
                 contentResolver.registerContentObserver(
                     uri,
                     true,
-                    smsContentObserver,
+                    smsContentObserver
                 )
                 Log.d("OnreadApplication", "Registered ContentObserver for $uri")
             } catch (e: SecurityException) {
@@ -45,12 +57,16 @@ class OnreadApplication : Application() {
                 Log.e("OnreadApplication", "Exception registering ContentObserver for $uri", e)
             }
         }
+        
+        // Note: If mmsRcsContentObserver needs to be registered to a specific URI as well, 
+        // you can register it here using contentResolver.registerContentObserver(...)
     }
 
     override fun onTerminate() {
         super.onTerminate()
         try {
             contentResolver.unregisterContentObserver(smsContentObserver)
+            contentResolver.unregisterContentObserver(mmsRcsContentObserver)
         } catch (e: Exception) {
             e.printStackTrace()
         }

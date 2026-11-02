@@ -12,7 +12,8 @@
 <!-- ===== HEADER / NAVIGATION ===== -->
 <header class="site-header">
     <div class="container header-inner">
-        <a href="#top" class="logo"><img src="images/logo/logo_onread.jpeg" alt="Onread" class="logo-img"></a>        <nav aria-label="Main navigation">
+        <a href="#top" class="logo"><img src="images/logo/logo_onread.jpeg" alt="Onread" class="logo-img"></a>
+        <nav aria-label="Main navigation">
             <ul class="nav-links">
                 <li><a href="#how">How it works</a></li>
                 <li><a href="#features">Features</a></li>
@@ -40,8 +41,12 @@
                 </div>
             </div>
             <div class="hero-image">
-                <!-- TODO: replace with a real screenshot, e.g. images/screenshots/home.png -->
-                <img src="images/wireframes/dashboard_screenshot.png" alt="Onread Dashboard" class="hero-screenshot">
+                <!-- App demo video. "controls" lets visitors pause it (accessibility). -->
+                <video class="hero-screenshot" autoplay loop muted playsinline controls
+                       aria-label="Onread app demo: setting a reminder and replying to a text">
+                    <source src="images/app/app_performance.mp4" type="video/mp4">
+                    Your browser doesn't support video.
+                </video>
             </div>
         </div>
     </section>
@@ -107,15 +112,15 @@
         </div>
     </section>
 
-    <!-- ===== SCREENSHOTS ===== -->
+    <!-- ===== WIREFRAMES ===== -->
     <section class="section section-alt">
         <div class="container">
             <h2>Wireframes</h2>
             <div class="gallery">
+                <img src="images/wireframes/contact_screenshot.png" alt="Choosing which contacts to track">
                 <img src="images/wireframes/timer_screenshot.png" alt="Setting a reminder time">
-                <img src="images/wireframes/notification_screenshot.png" alt="A reminder notification to reply">
                 <img src="images/wireframes/settings_screenshot.png" alt="Onread settings screen">
-                <img src="images/wireframes/contact_screenshot.png" alt="Onread settings screen">
+                <img src="images/wireframes/notification_screenshot.png" alt="A reminder notification to reply">
             </div>
         </div>
     </section>
@@ -180,6 +185,14 @@
         <div class="container narrow center">
             <h2>Try Onread</h2>
             <p>Onread is in development. Download the latest test version for Android.</p>
+
+            <!-- QR code: scan with a phone camera to open the download page -->
+            <figure class="qr-code">
+                <img src="images/app/download_app_qr_code.jpeg"
+                     alt="QR code that opens the Onread download page on GitHub">
+                <figcaption>Scan with your phone's camera to download</figcaption>
+            </figure>
+
             <!-- TODO: point this to your GitHub Release once you publish one -->
             <a href="https://github.com/jhutson256/onread/releases" class="btn btn-light">Download for Android</a>
         </div>
