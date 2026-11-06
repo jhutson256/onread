@@ -24,6 +24,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.roundToInt
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
@@ -273,6 +274,20 @@ fun ContactItemCard(
                     "Delay: ${defaultDelayMinutes}m (Default)"
                 }
                 Text(
+                    text = "Delay: ${
+                        when {
+                            effectiveDelayMinutes < 60 ->
+                                "$effectiveDelayMinutes minutes"
+
+                            effectiveDelayMinutes % 60 == 0 ->
+                                "${effectiveDelayMinutes / 60} hours"
+
+                            else ->
+                                "${effectiveDelayMinutes / 60} hr ${
+                                    effectiveDelayMinutes % 60
+                                } min"
+                        }
+                    } ($delayType)",
                     text = scheduleText,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
@@ -374,6 +389,83 @@ fun ContactSettingDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
+                    if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = when {
+                                delayMinutes < 60 ->
+                                    "Delay: ${delayMinutes.toInt()} minutes"
+
+                                delayMinutes.toInt() % 60 == 0 ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hours"
+
+                                else ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hr ${
+                                        delayMinutes.toInt() % 60
+                                    } min"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Slider(
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes =
+                                    delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Effective Reminder Settings",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Delay Type: $delayType",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Applied Reminder Time: ${
+                                when {
+                                    effectiveMinutes < 60 ->
+                                        "$effectiveMinutes minutes"
+
+                                    effectiveMinutes % 60 == 0 ->
+                                        "${effectiveMinutes / 60} hours"
+
+                                    else ->
+                                        "${effectiveMinutes / 60} hr ${effectiveMinutes % 60} min"
+                                }
+                            }",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
                     Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
                     Row(
                         modifier = Modifier.fillMaxWidth(),

@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.GroupEntity
 import com.example.onread.ui.viewmodel.GroupsViewModel
+import kotlin.math.roundToInt
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -168,6 +169,36 @@ fun GroupItemCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = group.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "$assignedCount contacts assigned • Delay: ${
+                            when {
+                                group.customDelayMinutes < 60 ->
+                                    "${group.customDelayMinutes} minutes"
+
+                                group.customDelayMinutes % 60 == 0 ->
+                                    "${group.customDelayMinutes / 60} hours"
+
+                                else ->
+                                    "${group.customDelayMinutes / 60} hr ${
+                                        group.customDelayMinutes % 60
+                                    } min"
+                            }
+                        }",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = group.name,
@@ -247,6 +278,47 @@ fun GroupEditDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                val delayOptions = remember {
+                    buildList {
+                        add(1)
+                        add(5)
+                        addAll((10..60 step 5).toList())
+                        addAll((90..720 step 30).toList())
+                        addAll((780..1440 step 60).toList())
+                    }
+                }
+
+                val currentIndex = delayOptions.indexOfFirst {
+                    it >= delayMinutes.toInt()
+                }.coerceAtLeast(0)
+
+                Text(
+                    text = "Default Delay: ${
+                        when {
+                            delayMinutes.toInt() < 60 ->
+                                "${delayMinutes.toInt()} minutes"
+
+                            delayMinutes.toInt() % 60 == 0 ->
+                                "${delayMinutes.toInt() / 60} hours"
+
+                            else ->
+                                "${delayMinutes.toInt() / 60} hr ${
+                                    delayMinutes.toInt() % 60
+                                } min"
+                        }
+                    }",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Slider(
+                    value = currentIndex.toFloat(),
+                    onValueChange = { value ->
+                        delayMinutes =
+                            delayOptions[value.roundToInt()].toFloat()
+                    },
+                    valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                    steps = 0
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
