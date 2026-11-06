@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.ui.viewmodel.ContactsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -25,6 +25,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.roundToInt
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -193,27 +194,11 @@ fun ContactsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredContacts, key = { it.contactId }) { contact ->
-                        val assignedGroup = groups.find { it.id == contact.groupId }
-                        val (delayType, effectiveMinutes) = when {
-                            contact.customDelayMinutes != null -> {
-                                if (assignedGroup != null && contact.groupAssignedAt > contact.customDelayUpdatedAt) {
-                                    "Group (${assignedGroup.name})" to assignedGroup.customDelayMinutes
-                                } else {
-                                    "Custom" to contact.customDelayMinutes
-                                }
-                            }
-                            assignedGroup != null -> {
-                                "Group (${assignedGroup.name})" to assignedGroup.customDelayMinutes
-                            }
-                            else -> {
-                                "Default" to defaultDelayMinutes
-                            }
-                        }
-
+                        val group = groups.find { it.id == contact.groupId }
                         ContactItemCard(
                             contact = contact,
-                            effectiveDelayMinutes = effectiveMinutes,
-                            delayType = delayType,
+                            groupName = group?.name,
+                            defaultDelayMinutes = defaultDelayMinutes,
                             onClick = { selectedContact = contact },
                             onToggleReminder = { enabled ->
                                 viewModel.updateContactSetting(contact.copy(isReminderEnabled = enabled))
@@ -229,8 +214,8 @@ fun ContactsScreen(
     selectedContact?.let { contact ->
         ContactSettingDialog(
             contact = contact,
-            defaultDelayMinutes = defaultDelayMinutes,
             groups = groups,
+            defaultDelayMinutes = defaultDelayMinutes,
             onDismiss = { selectedContact = null },
             onSave = { updated ->
                 viewModel.updateContactSetting(updated)
@@ -243,8 +228,8 @@ fun ContactsScreen(
 @Composable
 fun ContactItemCard(
     contact: ContactSettingEntity,
-    effectiveDelayMinutes: Int,
-    delayType: String,
+    groupName: String?,
+    defaultDelayMinutes: Int,
     onClick: () -> Unit,
     onToggleReminder: (Boolean) -> Unit
 ) {
@@ -272,7 +257,22 @@ fun ContactItemCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!groupName.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Group: $groupName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
+                val scheduleText = if (contact.useSpecificTime) {
+                    "Specific Time: ${String.format(Locale.getDefault(), "%02d:%02d", contact.specificHour, contact.specificMinute)}"
+                } else if (contact.customDelayMinutes != null) {
+                    "Delay: ${contact.customDelayMinutes}m (Custom)"
+                } else {
+                    "Delay: ${defaultDelayMinutes}m (Default)"
+                }
                 Text(
                     text = "Delay: ${
                         when {
@@ -288,6 +288,7 @@ fun ContactItemCard(
                                 } min"
                         }
                     } ($delayType)",
+                    text = scheduleText,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -304,33 +305,19 @@ fun ContactItemCard(
 @Composable
 fun ContactSettingDialog(
     contact: ContactSettingEntity,
+    groups: List<GroupEntity>,
     defaultDelayMinutes: Int,
-    groups: List<ContactGroupEntity>,
     onDismiss: () -> Unit,
     onSave: (ContactSettingEntity) -> Unit
 ) {
     var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
+    var selectedGroupId by remember { mutableStateOf(contact.groupId) }
+    var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
+    var specificHour by remember { mutableStateOf(contact.specificHour) }
+    var specificMinute by remember { mutableStateOf(contact.specificMinute) }
     var useCustomDelay by remember { mutableStateOf(contact.customDelayMinutes != null) }
     var delayMinutes by remember { mutableStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
-
-    val assignedGroup = groups.find { it.id == contact.groupId }
-    val effectiveCustomDelay = if (useCustomDelay) delayMinutes.toInt() else null
-
-    val (delayType, effectiveMinutes) = when {
-        effectiveCustomDelay != null -> {
-            if (assignedGroup != null && contact.groupAssignedAt > contact.customDelayUpdatedAt) {
-                "Group (${assignedGroup.name})" to assignedGroup.customDelayMinutes
-            } else {
-                "Custom" to effectiveCustomDelay
-            }
-        }
-        assignedGroup != null -> {
-            "Group (${assignedGroup.name})" to assignedGroup.customDelayMinutes
-        }
-        else -> {
-            "Default" to defaultDelayMinutes
-        }
-    }
+    var expandedGroupDropdown by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -355,16 +342,52 @@ fun ContactSettingDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Group assignment dropdown
+                Text("Group", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { expandedGroupDropdown = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val groupName = groups.find { it.id == selectedGroupId }?.name ?: "None (No Group)"
+                        Text("Group: $groupName")
+                    }
+                    DropdownMenu(
+                        expanded = expandedGroupDropdown,
+                        onDismissRequest = { expandedGroupDropdown = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("None (No Group)") },
+                            onClick = {
+                                selectedGroupId = null
+                                expandedGroupDropdown = false
+                            }
+                        )
+                        groups.forEach { group ->
+                            DropdownMenuItem(
+                                text = { Text(group.name) },
+                                onClick = {
+                                    selectedGroupId = group.id
+                                    expandedGroupDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Custom Delay")
-                    Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+                    Text("Use Specific Clock Time")
+                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
                 }
 
-                if (useCustomDelay) {
+                if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
                     if (useCustomDelay) {
                         val delayOptions = remember {
@@ -443,6 +466,44 @@ fun ContactSettingDialog(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
+                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { specificHour = (specificHour + 1) % 24 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Hour: ${String.format(Locale.getDefault(), "%02d", specificHour)}")
+                        }
+                        OutlinedButton(
+                            onClick = { specificMinute = (specificMinute + 15) % 60 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Min: ${String.format(Locale.getDefault(), "%02d", specificMinute)}")
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Custom Delay")
+                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+                    }
+
+                    if (useCustomDelay) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
+                        Slider(
+                            value = delayMinutes,
+                            onValueChange = { delayMinutes = it },
+                            valueRange = 1f..120f,
+                            steps = 119
                         )
                     }
                 }
@@ -450,14 +511,14 @@ fun ContactSettingDialog(
         },
         confirmButton = {
             Button(onClick = {
-                val newCustomDelay = if (useCustomDelay) delayMinutes.toInt() else null
-                val delayChanged = contact.customDelayMinutes != newCustomDelay
-                val now = System.currentTimeMillis()
                 onSave(
                     contact.copy(
                         isReminderEnabled = isEnabled,
-                        customDelayMinutes = newCustomDelay,
-                        customDelayUpdatedAt = if (delayChanged) now else contact.customDelayUpdatedAt
+                        groupId = selectedGroupId,
+                        useSpecificTime = useSpecificTime,
+                        specificHour = specificHour,
+                        specificMinute = specificMinute,
+                        customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null
                     )
                 )
             }) {

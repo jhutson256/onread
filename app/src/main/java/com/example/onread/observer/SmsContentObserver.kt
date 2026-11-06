@@ -16,9 +16,11 @@ import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
+import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -460,29 +462,33 @@ class SmsContentObserver(
 
                         val resolvedAddress = resolveAddress(context, rawAddress, threadId)
 
-                        if (resolvedAddress != null) {
-                            // DO NOT filter out messages where protocol is null or 0 (RCS written by Google Messages often has protocol == null)
-                            when (type) {
-                                Telephony.Sms.MESSAGE_TYPE_INBOX -> {
-                                    Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
-                                    processIncomingMessage(
-                                        senderAddress = resolvedAddress,
-                                        body = body ?: "",
-                                        timestampMs = dateMs,
-                                        sourceTag = "RCS/SMS",
-                                        savedContactsOnly = savedContactsOnly,
-                                        defaultDelay = defaultDelay,
-                                        defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                        mutableContactSettings = mutableContactSettings
-                                    )
-                                }
-                                Telephony.Sms.MESSAGE_TYPE_SENT -> {
-                                    Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
-                                    processOutgoingMessage(resolvedAddress)
-                                }
-                                else -> {
-                                    Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
-                                }
+                        if (resolvedAddress.isNullOrEmpty()) {
+                            Log.d(RCS_LOG_TAG, "SMS/RCS address could not be resolved for message $id. Skipping.")
+                            continue
+                        }
+
+                        Log.d(RCS_LOG_TAG, "Resolved address for message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
+
+                        when (type) {
+                            Telephony.Sms.MESSAGE_TYPE_INBOX -> {
+                                Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
+                                processIncomingMessage(
+                                    senderAddress = resolvedAddress,
+                                    body = body ?: "",
+                                    timestampMs = dateMs,
+                                    sourceTag = "RCS/SMS",
+                                    savedContactsOnly = savedContactsOnly,
+                                    defaultDelay = defaultDelay,
+                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                    mutableContactSettings = mutableContactSettings
+                                )
+                            }
+                            Telephony.Sms.MESSAGE_TYPE_SENT -> {
+                                Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
+                                processOutgoingMessage(resolvedAddress)
+                            }
+                            else -> {
+                                Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
                             }
                         }
                     }
@@ -600,25 +606,26 @@ class SmsContentObserver(
 
                         if (isIncoming) {
                             val senders = getMmsAddresses(id, PDU_HEADER_FROM)
-                            var senderAddress = senders.firstOrNull()
-                            if (senderAddress.isNullOrBlank() && threadId != null && threadId > 0) {
-                                val threadAddrs = getAddressesForThread(context, threadId)
-                                senderAddress = threadAddrs.firstOrNull()
+                            val rawSender = senders.firstOrNull()
+                            val sender = resolveAddress(context, rawSender, threadId)
+                            if (sender == null) {
+                                Log.d(RCS_LOG_TAG, "MMS sender address is null or empty for message $id. Skipping.")
+                                continue
                             }
-                            val resolvedSender = senderAddress?.let { resolveAddress(context, it, threadId) }
-                            if (resolvedSender != null) {
-                                val body = extractMmsBody(id, subject)
-                                processIncomingMessage(
-                                    senderAddress = resolvedSender,
-                                    body = body,
-                                    timestampMs = dateMs,
-                                    sourceTag = "MMS",
-                                    savedContactsOnly = savedContactsOnly,
-                                    defaultDelay = defaultDelay,
-                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                    mutableContactSettings = mutableContactSettings
-                                )
-                            }
+                            Log.d(RCS_LOG_TAG, "Processing INCOMING MMS from $sender (id: $id, date: $dateMs)")
+
+                            val body = extractMmsBody(id, subject)
+
+                            processIncomingMessage(
+                                senderAddress = sender,
+                                body = body,
+                                timestampMs = dateMs,
+                                sourceTag = "MMS",
+                                savedContactsOnly = savedContactsOnly,
+                                defaultDelay = defaultDelay,
+                                defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                mutableContactSettings = mutableContactSettings
+                            )
                         } else if (isOutgoing) {
                             var recipients = getMmsAddresses(id, PDU_HEADER_TO)
                             if (recipients.isEmpty() && threadId != null && threadId > 0) {
@@ -654,6 +661,7 @@ class SmsContentObserver(
     ) {
         val reminderDao = database.reminderDao()
         val contactDao = database.contactDao()
+        val groupDao = database.groupDao()
 
         val isSaved = if (savedContactsOnly) ContactSyncHelper.isContactSaved(context, senderAddress) else true
         if (!shouldProcessSms(savedContactsOnly, isSaved)) {
@@ -686,35 +694,22 @@ class SmsContentObserver(
             Log.d(RCS_LOG_TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
         }
 
-        val group = contactSetting.groupId?.let { database.contactGroupDao().getGroupById(it).first() }
-        val isReminderEnabled = if (contactSetting.isReminderEnabled) {
-            group?.isReminderEnabled ?: true
-        } else {
-            false
-        }
+        val groups = groupDao.getAllGroups().first()
+        val group = groups.find { it.id == contactSetting.groupId }
 
-        if (!isReminderEnabled) {
-            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact or group")
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contactSetting,
+            group = group,
+            defaultDelayMinutes = defaultDelay,
+            timestampMs = timestampMs
+        )
+
+        if (!resolved.isReminderEnabled) {
+            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName} or group")
             return
         }
 
-        val delayMinutes = when {
-            contactSetting.customDelayMinutes != null -> {
-                if (group != null && contactSetting.groupAssignedAt > contactSetting.customDelayUpdatedAt) {
-                    group.customDelayMinutes
-                } else {
-                    contactSetting.customDelayMinutes
-                }
-            }
-            group != null -> {
-                group.customDelayMinutes
-            }
-            else -> {
-                defaultDelay
-            }
-        }
-        val triggerTime = timestampMs + (delayMinutes * 60 * 1000L)
-
+        val triggerTime = resolved.triggerTime
         val messageText = if (body.isNotBlank()) body else "[RCS message]"
 
         val reminder = ReminderEntity(
@@ -725,7 +720,12 @@ class SmsContentObserver(
             triggerTime = triggerTime,
             status = "PENDING"
         )
-        val reminderId = reminderDao.insertReminder(reminder)
+        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderId = reminderRepository.insertReminder(reminder)
+        if (reminderId <= 0L) {
+            Log.d(RCS_LOG_TAG, "Skipping duplicate incoming $sourceTag from $senderAddress (duplicate within 60s)")
+            return
+        }
         Log.d(RCS_LOG_TAG, "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime")
 
         scheduleReminderAlarm(context, reminderId, triggerTime)

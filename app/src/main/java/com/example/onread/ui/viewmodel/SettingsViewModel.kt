@@ -21,6 +21,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val savedContactsOnly: StateFlow<Boolean> = settingsRepository.savedContactsOnlyFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val useSpecificTime: StateFlow<Boolean> = settingsRepository.useSpecificTimeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val specificTimeHour: StateFlow<Int> = settingsRepository.specificTimeHourFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 18)
+
+    val specificTimeMinute: StateFlow<Int> = settingsRepository.specificTimeMinuteFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 30)
+
     fun updateColorTheme(theme: String) {
         viewModelScope.launch {
             settingsRepository.updateColorTheme(theme)
@@ -36,6 +45,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateSavedContactsOnly(savedOnly: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateSavedContactsOnly(savedOnly)
+        }
+    }
+
+    fun updateUseSpecificTime(useSpecific: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateUseSpecificTime(useSpecific)
+        }
+    }
+
+    fun updateSpecificTime(hour: Int, minute: Int) {
+        viewModelScope.launch {
+            settingsRepository.updateSpecificTime(hour, minute)
         }
     }
 }

@@ -20,8 +20,35 @@ interface ContactDao {
     @Query("SELECT * FROM contact_settings WHERE phoneNumber = :phoneNumber")
     fun getContactSettingByPhoneNumber(phoneNumber: String): Flow<ContactSettingEntity?>
 
+    @Query("SELECT * FROM contact_settings WHERE groupId = :groupId ORDER BY LOWER(displayName) ASC")
+    fun getContactsByGroupId(groupId: String): Flow<List<ContactSettingEntity>>
+
     @Query("UPDATE contact_settings SET groupId = NULL WHERE groupId = :groupId")
     suspend fun removeGroupFromContacts(groupId: Long)
+
+    @Query("UPDATE contact_settings SET groupId = NULL WHERE groupId = :groupId")
+    suspend fun removeGroupFromContacts(groupId: String)
+
+    @Query("UPDATE contact_settings SET isReminderEnabled = :isReminderEnabled, customDelayMinutes = :customDelayMinutes, useSpecificTime = :useSpecificTime, specificHour = :specificHour, specificMinute = :specificMinute WHERE groupId = :groupId")
+    suspend fun updateContactsForGroup(
+        groupId: String,
+        isReminderEnabled: Boolean,
+        customDelayMinutes: Int?,
+        useSpecificTime: Boolean,
+        specificHour: Int,
+        specificMinute: Int
+    )
+
+    @Query("UPDATE contact_settings SET groupId = :groupId, isReminderEnabled = :isReminderEnabled, customDelayMinutes = :customDelayMinutes, useSpecificTime = :useSpecificTime, specificHour = :specificHour, specificMinute = :specificMinute WHERE contactId = :contactId")
+    suspend fun assignContactToGroupWithSettings(
+        contactId: String,
+        groupId: String?,
+        isReminderEnabled: Boolean,
+        customDelayMinutes: Int?,
+        useSpecificTime: Boolean,
+        specificHour: Int,
+        specificMinute: Int
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContactSetting(setting: ContactSettingEntity)
