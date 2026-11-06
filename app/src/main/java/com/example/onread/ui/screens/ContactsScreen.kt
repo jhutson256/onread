@@ -24,6 +24,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import androidx.compose.animation.core.*
 import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -273,7 +274,20 @@ fun ContactItemCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Delay: ${effectiveDelayMinutes}m ($delayType)",
+                    text = "Delay: ${
+                        when {
+                            effectiveDelayMinutes < 60 ->
+                                "$effectiveDelayMinutes minutes"
+
+                            effectiveDelayMinutes % 60 == 0 ->
+                                "${effectiveDelayMinutes / 60} hours"
+
+                            else ->
+                                "${effectiveDelayMinutes / 60} hr ${
+                                    effectiveDelayMinutes % 60
+                                } min"
+                        }
+                    } ($delayType)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -352,13 +366,49 @@ fun ContactSettingDialog(
 
                 if (useCustomDelay) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
-                    Slider(
-                        value = delayMinutes,
-                        onValueChange = { delayMinutes = it },
-                        valueRange = 1f..120f,
-                        steps = 119
-                    )
+                    if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = when {
+                                delayMinutes < 60 ->
+                                    "Delay: ${delayMinutes.toInt()} minutes"
+
+                                delayMinutes.toInt() % 60 == 0 ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hours"
+
+                                else ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hr ${
+                                        delayMinutes.toInt() % 60
+                                    } min"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Slider(
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes =
+                                    delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -378,7 +428,18 @@ fun ContactSettingDialog(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "Applied Reminder Time: $effectiveMinutes minutes",
+                            text = "Applied Reminder Time: ${
+                                when {
+                                    effectiveMinutes < 60 ->
+                                        "$effectiveMinutes minutes"
+
+                                    effectiveMinutes % 60 == 0 ->
+                                        "${effectiveMinutes / 60} hours"
+
+                                    else ->
+                                        "${effectiveMinutes / 60} hr ${effectiveMinutes % 60} min"
+                                }
+                            }",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold

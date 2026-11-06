@@ -31,6 +31,8 @@ import com.example.onread.ui.viewmodel.SettingsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -180,16 +182,46 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$defaultDelayMinutes minutes",
+                            text = when {
+                                defaultDelayMinutes < 60 ->
+                                    "$defaultDelayMinutes minutes"
+
+                                defaultDelayMinutes % 60 == 0 ->
+                                    "${defaultDelayMinutes / 60} hours"
+
+                                else ->
+                                    "${defaultDelayMinutes / 60} hr ${defaultDelayMinutes % 60} min"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+
+
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val sliderIndex = delayOptions.indexOfFirst {
+                            it >= defaultDelayMinutes
+                        }.coerceAtLeast(0)
+
                         Slider(
-                            value = defaultDelayMinutes.toFloat(),
-                            onValueChange = { viewModel.updateDefaultDelayMinutes(it.toInt()) },
-                            valueRange = 5f..120f,
-                            steps = 22
+                            value = sliderIndex.toFloat(),
+                            onValueChange = { value ->
+                                val selectedIndex = value.roundToInt()
+                                viewModel.updateDefaultDelayMinutes(
+                                    delayOptions[selectedIndex]
+                                )
+                            },
+                            valueRange = 0f..(delayOptions.lastIndex).toFloat(),
+                            steps = 0
                         )
                     }
                 }
