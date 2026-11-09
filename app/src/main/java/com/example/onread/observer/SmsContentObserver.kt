@@ -72,12 +72,15 @@ class SmsContentObserver(
 
         fun cleanMmsAddress(address: String?): String? {
             if (address.isNullOrBlank()) return null
-            if (address.equals("insert-address-token", ignoreCase = true) ||
-                address.contains("insert-address-token", ignoreCase = true)
-            ) {
-                return null
+            val stripped = address.replace(Regex("(?i)insert-address-token"), "").trim()
+            if (stripped.isBlank()) return null
+            if (stripped.contains("@")) {
+                return stripped
             }
-            return address.trim()
+            val hasLeadingPlus = stripped.startsWith("+")
+            val digitsOnly = stripped.filter { it.isDigit() }
+            if (digitsOnly.isEmpty()) return null
+            return if (hasLeadingPlus) "+$digitsOnly" else digitsOnly
         }
 
         fun determineMmsBody(extractedText: String?, subject: String?): String {
@@ -94,8 +97,14 @@ class SmsContentObserver(
             return "[Media / RCS message]"
         }
 
-        fun isNewMessage(timestamp: Long, observerStartTime: Long, messageId: Long, initialMaxId: Long): Boolean {
-            return timestamp >= observerStartTime && messageId > initialMaxId
+        fun isNewMessage(
+            timestamp: Long,
+            observerStartTime: Long,
+            messageId: Long,
+            initialMaxId: Long,
+            gracePeriodMs: Long = 10000L
+        ): Boolean {
+            return timestamp >= (observerStartTime - gracePeriodMs) && messageId > initialMaxId
         }
 
         fun isLikelyPhoneNumber(address: String?): Boolean {
@@ -348,14 +357,14 @@ class SmsContentObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
-        Log.d(RCS_LOG_TAG, "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
+        Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
     }
 
     override fun onChange(selfChange: Boolean) {
         super.onChange(selfChange)
-        Log.d(RCS_LOG_TAG, "ContentObserver onChange fired (no URI), selfChange: $selfChange")
+        Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired (no URI), selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
     }
@@ -363,7 +372,7 @@ class SmsContentObserver(
     private fun pollLatestSms() {
         scope.launch {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestSms.")
+                Log.d("ONREAD_CONSISTENCY", "READ_SMS permission not granted. Skipping pollLatestSms.")
                 return@launch
             }
             try {
@@ -415,11 +424,11 @@ class SmsContentObserver(
 
                 cursor?.use {
                     if (it.count == 0) {
-                        Log.d(TAG, "No new SMS/RCS messages to process (lastProcessedSmsId=$currentLastId)")
+                        Log.d("ONREAD_CONSISTENCY", "No new SMS/RCS messages to process (lastProcessedSmsId=$currentLastId)")
                         return@launch
                     }
 
-                    Log.d(RCS_LOG_TAG, "Polling content://sms: found ${it.count} new entries (lastProcessedSmsId=$currentLastId)")
+                    Log.d("ONREAD_CONSISTENCY", "Polling content://sms: found ${it.count} new entries (lastProcessedSmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
@@ -445,7 +454,7 @@ class SmsContentObserver(
                         val threadId = if (threadIdIndex != -1) it.getLong(threadIdIndex) else null
 
                         if (id <= currentLastId) {
-                            Log.d(TAG, "SMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
+                            Log.d("ONREAD_CONSISTENCY", "SMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
                             continue
                         }
 
@@ -453,25 +462,25 @@ class SmsContentObserver(
 
                         val dateMs = normalizeSmsTimestamp(rawDate)
 
-                        Log.d(RCS_LOG_TAG, "Detected SMS/RCS message entry: id=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
+                        Log.d("ONREAD_CONSISTENCY", "Detected SMS/RCS message entry: id=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
 
                         if (!isNewMessage(dateMs, observerStartTime, id, initialMaxSmsId)) {
-                            Log.d(RCS_LOG_TAG, "Skipping historical SMS/RCS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
+                            Log.d("ONREAD_CONSISTENCY", "Skipping historical SMS/RCS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
                             continue
                         }
 
                         val resolvedAddress = resolveAddress(context, rawAddress, threadId)
 
                         if (resolvedAddress.isNullOrEmpty()) {
-                            Log.d(RCS_LOG_TAG, "SMS/RCS address could not be resolved for message $id. Skipping.")
+                            Log.d("ONREAD_CONSISTENCY", "SMS/RCS address could not be resolved for message $id. Skipping.")
                             continue
                         }
 
-                        Log.d(RCS_LOG_TAG, "Resolved address for message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
+                        Log.d("ONREAD_CONSISTENCY", "Resolved address for SMS message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
 
                         when (type) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> {
-                                Log.d(RCS_LOG_TAG, "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs)")
+                                Log.d("ONREAD_CONSISTENCY", "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs, threadId: $threadId)")
                                 processIncomingMessage(
                                     senderAddress = resolvedAddress,
                                     body = body ?: "",
@@ -480,15 +489,16 @@ class SmsContentObserver(
                                     savedContactsOnly = savedContactsOnly,
                                     defaultDelay = defaultDelay,
                                     defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                    mutableContactSettings = mutableContactSettings
+                                    mutableContactSettings = mutableContactSettings,
+                                    threadId = threadId ?: 0L
                                 )
                             }
                             Telephony.Sms.MESSAGE_TYPE_SENT -> {
-                                Log.d(RCS_LOG_TAG, "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
+                                Log.d("ONREAD_CONSISTENCY", "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
                                 processOutgoingMessage(resolvedAddress)
                             }
                             else -> {
-                                Log.d(RCS_LOG_TAG, "Unhandled SMS/RCS type $type for message $id")
+                                Log.d("ONREAD_CONSISTENCY", "Unhandled SMS/RCS type $type for message $id")
                             }
                         }
                     }
@@ -504,7 +514,7 @@ class SmsContentObserver(
     private fun pollLatestMms() {
         scope.launch {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "READ_SMS permission not granted. Skipping pollLatestMms.")
+                Log.d("ONREAD_CONSISTENCY", "READ_SMS permission not granted. Skipping pollLatestMms.")
                 return@launch
             }
             try {
@@ -556,11 +566,11 @@ class SmsContentObserver(
 
                 cursor?.use {
                     if (it.count == 0) {
-                        Log.d(TAG, "No new MMS messages to process (lastProcessedMmsId=$currentLastId)")
+                        Log.d("ONREAD_CONSISTENCY", "No new MMS messages to process (lastProcessedMmsId=$currentLastId)")
                         return@launch
                     }
 
-                    Log.d(RCS_LOG_TAG, "Polling content://mms: found ${it.count} new entries (lastProcessedMmsId=$currentLastId)")
+                    Log.d("ONREAD_CONSISTENCY", "Polling content://mms: found ${it.count} new entries (lastProcessedMmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
@@ -586,7 +596,7 @@ class SmsContentObserver(
                         val threadId = if (threadIdIndex != -1) it.getLong(threadIdIndex) else null
 
                         if (id <= currentLastId) {
-                            Log.d(TAG, "MMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
+                            Log.d("ONREAD_CONSISTENCY", "MMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
                             continue
                         }
 
@@ -594,10 +604,10 @@ class SmsContentObserver(
 
                         val dateMs = normalizeMmsTimestamp(rawDate)
 
-                        Log.d(RCS_LOG_TAG, "Detected MMS entry: id=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
+                        Log.d("ONREAD_CONSISTENCY", "Detected MMS entry: id=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
 
                         if (!isNewMessage(dateMs, observerStartTime, id, initialMaxMmsId)) {
-                            Log.d(RCS_LOG_TAG, "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
+                            Log.d("ONREAD_CONSISTENCY", "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
                             continue
                         }
 
@@ -606,13 +616,18 @@ class SmsContentObserver(
 
                         if (isIncoming) {
                             val senders = getMmsAddresses(id, PDU_HEADER_FROM)
-                            val rawSender = senders.firstOrNull()
-                            val sender = resolveAddress(context, rawSender, threadId)
+                            var rawSender = senders.firstOrNull()
+                            Log.d("ONREAD_CONSISTENCY", "MMS id=$id PDU_HEADER_FROM (type 137) rawSender='$rawSender'")
+                            if (rawSender.isNullOrBlank() && threadId != null && threadId > 0) {
+                                rawSender = resolveAddress(context, null, threadId)
+                                Log.d("ONREAD_CONSISTENCY", "MMS id=$id fallback resolveAddress for threadId=$threadId: rawSender='$rawSender'")
+                            }
+                            val sender = cleanMmsAddress(rawSender) ?: resolveAddress(context, rawSender, threadId)
                             if (sender == null) {
-                                Log.d(RCS_LOG_TAG, "MMS sender address is null or empty for message $id. Skipping.")
+                                Log.d("ONREAD_CONSISTENCY", "MMS sender address is null or empty for message $id. Skipping.")
                                 continue
                             }
-                            Log.d(RCS_LOG_TAG, "Processing INCOMING MMS from $sender (id: $id, date: $dateMs)")
+                            Log.d("ONREAD_CONSISTENCY", "Processing INCOMING MMS from sender $sender (id: $id, date: $dateMs, threadId: $threadId)")
 
                             val body = extractMmsBody(id, subject)
 
@@ -624,7 +639,8 @@ class SmsContentObserver(
                                 savedContactsOnly = savedContactsOnly,
                                 defaultDelay = defaultDelay,
                                 defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                mutableContactSettings = mutableContactSettings
+                                mutableContactSettings = mutableContactSettings,
+                                threadId = threadId ?: 0L
                             )
                         } else if (isOutgoing) {
                             var recipients = getMmsAddresses(id, PDU_HEADER_TO)
@@ -632,12 +648,12 @@ class SmsContentObserver(
                                 recipients = getAddressesForThread(context, threadId)
                             }
                             val resolvedRecipients = recipients.mapNotNull { recipient -> resolveAddress(context, recipient, threadId) }.distinct()
-                            Log.d(RCS_LOG_TAG, "Processing OUTGOING MMS (id: $id) to recipients: $resolvedRecipients")
+                            Log.d("ONREAD_CONSISTENCY", "Processing OUTGOING MMS (id: $id) to recipients: $resolvedRecipients")
                             for (recipient in resolvedRecipients) {
                                 processOutgoingMessage(recipient)
                             }
                         } else {
-                            Log.d(RCS_LOG_TAG, "Unhandled MMS msg_box $msgBox, m_type $mType for message $id")
+                            Log.d("ONREAD_CONSISTENCY", "Unhandled MMS msg_box $msgBox, m_type $mType for message $id")
                         }
                     }
                 }
@@ -657,15 +673,16 @@ class SmsContentObserver(
         savedContactsOnly: Boolean,
         defaultDelay: Int,
         defaultContactReminderEnabled: Boolean,
-        mutableContactSettings: MutableList<ContactSettingEntity>
+        mutableContactSettings: MutableList<ContactSettingEntity>,
+        threadId: Long = 0L
     ) {
         val reminderDao = database.reminderDao()
         val contactDao = database.contactDao()
         val groupDao = database.groupDao()
 
-        val isSaved = if (savedContactsOnly) ContactSyncHelper.isContactSaved(context, senderAddress) else true
+        val isSaved = ContactSyncHelper.isContactSaved(context, senderAddress)
         if (!shouldProcessSms(savedContactsOnly, isSaved)) {
-            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: savedContactsOnly is true and contact is not saved in contacts.")
+            Log.d("ONREAD_CONSISTENCY", "Skipping incoming $sourceTag from $senderAddress: savedContactsOnly is true and contact is not saved in contacts.")
             return
         }
 
@@ -687,11 +704,12 @@ class SmsContentObserver(
                 phoneNumber = normalizedAddress.ifEmpty { senderAddress },
                 displayName = displayName,
                 isReminderEnabled = defaultContactReminderEnabled,
-                customDelayMinutes = null
+                customDelayMinutes = null,
+                isSavedContact = isSaved
             )
             contactDao.insertContactSetting(contactSetting)
             mutableContactSettings.add(contactSetting)
-            Log.d(RCS_LOG_TAG, "Auto-inserted default ContactSettingEntity for $senderAddress ($displayName)")
+            Log.d("ONREAD_CONSISTENCY", "Auto-inserted default ContactSettingEntity for sender $senderAddress ($displayName, isSavedContact=$isSaved)")
         }
 
         val groups = groupDao.getAllGroups().first()
@@ -705,7 +723,7 @@ class SmsContentObserver(
         )
 
         if (!resolved.isReminderEnabled) {
-            Log.d(RCS_LOG_TAG, "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName} or group")
+            Log.d("ONREAD_CONSISTENCY", "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName} or group")
             return
         }
 
@@ -718,33 +736,24 @@ class SmsContentObserver(
             messageBody = messageText,
             timestamp = timestampMs,
             triggerTime = triggerTime,
-            status = "PENDING"
+            status = "PENDING",
+            threadId = threadId
         )
         val reminderRepository = ReminderRepository(reminderDao)
         val reminderId = reminderRepository.insertReminder(reminder)
         if (reminderId <= 0L) {
-            Log.d(RCS_LOG_TAG, "Skipping duplicate incoming $sourceTag from $senderAddress (duplicate within 60s)")
+            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window)")
             return
         }
-        Log.d(RCS_LOG_TAG, "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime")
+        Log.d("ONREAD_CONSISTENCY", "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime, threadId: $threadId")
 
         scheduleReminderAlarm(context, reminderId, triggerTime)
     }
 
     private suspend fun processOutgoingMessage(recipientAddress: String) {
-        val reminderDao = database.reminderDao()
-        val normalizedAddress = recipientAddress.replace(Regex("[^0-9+]"), "")
-        val inputDigits = recipientAddress.replace(Regex("[^0-9]"), "")
-
-        reminderDao.dismissRemindersForNumber(normalizedAddress)
-        reminderDao.dismissRemindersForNumber(recipientAddress)
-        if (inputDigits.isNotEmpty()) {
-            reminderDao.dismissRemindersForNumber(inputDigits)
-            if (inputDigits.length >= 10) {
-                reminderDao.dismissRemindersForNumber(inputDigits.takeLast(10))
-            }
-        }
-        Log.d(RCS_LOG_TAG, "Dismissed pending reminders for recipient: $recipientAddress")
+        val reminderRepository = ReminderRepository(database.reminderDao())
+        reminderRepository.dismissPendingRemindersForNumber(context, recipientAddress)
+        Log.d("ONREAD_CONSISTENCY", "Dismissed pending reminders and cancelled alarms for recipient: $recipientAddress")
     }
 
     private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
@@ -766,8 +775,10 @@ class SmsContentObserver(
                     val type = if (typeIndex != -1) it.getInt(typeIndex) else -1
                     if (type == targetType && addressIndex != -1) {
                         val rawAddr = it.getString(addressIndex)
+                        Log.d("ONREAD_CONSISTENCY", "Query content://mms/$mmsId/addr for type $targetType: rawAddr='$rawAddr'")
                         cleanMmsAddress(rawAddr)?.let { cleaned ->
                             addresses.add(cleaned)
+                            Log.d("ONREAD_CONSISTENCY", "Resolved/Cleaned MMS address for type $targetType: '$cleaned'")
                         }
                     }
                 }

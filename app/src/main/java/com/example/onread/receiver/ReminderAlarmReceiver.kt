@@ -75,7 +75,9 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                             snoozeEnabled,
                             snoozeDurationMinutes,
                             maxSnoozeCount,
-                            reminder.snoozeCount
+                            reminder.snoozeCount,
+                            reminder.phoneNumber,
+                            reminder.threadId
                         )
                         Log.d(TAG, "Posted notification for reminder ID $reminderId (${reminder.contactName})")
                     }

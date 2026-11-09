@@ -14,6 +14,9 @@ interface ContactDao {
     @Query("SELECT * FROM contact_settings ORDER BY LOWER(displayName) ASC")
     fun getAllContactSettings(): Flow<List<ContactSettingEntity>>
 
+    @Query("SELECT * FROM contact_settings WHERE isSavedContact = 1 ORDER BY LOWER(displayName) ASC")
+    fun getAllSavedContactSettings(): Flow<List<ContactSettingEntity>>
+
     @Query("SELECT * FROM contact_settings WHERE contactId = :contactId")
     fun getContactSettingById(contactId: String): Flow<ContactSettingEntity?>
 

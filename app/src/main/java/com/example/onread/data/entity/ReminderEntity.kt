@@ -13,5 +13,6 @@ data class ReminderEntity(
     val timestamp: Long,
     val triggerTime: Long,
     val status: String, // e.g., "PENDING", "SENT", "CANCELLED", "FAILED"
-    val snoozeCount: Int = 0
+    val snoozeCount: Int = 0,
+    val threadId: Long = 0L
 )

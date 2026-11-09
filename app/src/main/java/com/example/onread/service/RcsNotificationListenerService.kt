@@ -274,7 +274,8 @@ class RcsNotificationListenerService : NotificationListenerService() {
                 phoneNumber = phoneNumber,
                 displayName = displayName,
                 isReminderEnabled = defaultContactReminderEnabled,
-                customDelayMinutes = null
+                customDelayMinutes = null,
+                isSavedContact = isSavedInSystem
             )
         }
 
