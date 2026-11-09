@@ -135,3 +135,368 @@ fun ContactsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(onClick = { contactsPermissionState.launchPermissionRequest() }) {
                             Text("Grant Permission")
+                        }
+                    }
+                }
+            }
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                placeholder = { Text("Search contacts...") },
+                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium
+            )
+
+            if (contacts.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContactPhone,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No contacts imported",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = {
+                            if (contactsPermissionState.status.isGranted) {
+                                viewModel.syncContacts()
+                            } else {
+                                contactsPermissionState.launchPermissionRequest()
+                            }
+                        }) {
+                            Text("Import Contacts")
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredContacts, key = { it.contactId }) { contact ->
+                        val group = groups.find { it.id == contact.groupId }
+                        ContactItemCard(
+                            contact = contact,
+                            groupName = group?.name,
+                            defaultDelayMinutes = defaultDelayMinutes,
+                            onClick = { selectedContact = contact },
+                            onToggleReminder = { enabled ->
+                                viewModel.updateContactSetting(contact.copy(isReminderEnabled = enabled))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Contact Setting Dialog
+    selectedContact?.let { contact ->
+        ContactSettingDialog(
+            contact = contact,
+            groups = groups,
+            defaultDelayMinutes = defaultDelayMinutes,
+            onDismiss = { selectedContact = null },
+            onSave = { updated ->
+                viewModel.updateContactSetting(updated)
+                selectedContact = null
+            }
+        )
+    }
+}
+
+@Composable
+fun ContactItemCard(
+    contact: ContactSettingEntity,
+    groupName: String?,
+    defaultDelayMinutes: Int,
+    onClick: () -> Unit,
+    onToggleReminder: (Boolean) -> Unit
+) {
+    val effectiveDelayMinutes = contact.customDelayMinutes ?: defaultDelayMinutes
+    val delayType = if (contact.customDelayMinutes != null) "Custom" else "Default"
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = contact.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = contact.phoneNumber,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!groupName.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Group: $groupName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                val scheduleText = if (contact.useSpecificTime) {
+                    "Specific Time: ${String.format(Locale.getDefault(), "%02d:%02d", contact.specificHour, contact.specificMinute)}"
+                } else {
+                    val delayFormatted = when {
+                        effectiveDelayMinutes < 60 -> "$effectiveDelayMinutes minutes"
+                        effectiveDelayMinutes % 60 == 0 -> "${effectiveDelayMinutes / 60} hours"
+                        else -> "${effectiveDelayMinutes / 60} hr ${effectiveDelayMinutes % 60} min"
+                    }
+                    "Delay: $delayFormatted ($delayType)"
+                }
+                Text(
+                    text = scheduleText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            Switch(
+                checked = contact.isReminderEnabled,
+                onCheckedChange = onToggleReminder
+            )
+        }
+    }
+}
+
+@Composable
+fun ContactSettingDialog(
+    contact: ContactSettingEntity,
+    groups: List<GroupEntity>,
+    defaultDelayMinutes: Int,
+    onDismiss: () -> Unit,
+    onSave: (ContactSettingEntity) -> Unit
+) {
+    var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
+    var selectedGroupId by remember { mutableStateOf(contact.groupId) }
+    var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
+    var specificHour by remember { mutableStateOf(contact.specificHour) }
+    var specificMinute by remember { mutableStateOf(contact.specificMinute) }
+    var useCustomDelay by remember { mutableStateOf(contact.customDelayMinutes != null) }
+    var delayMinutes by remember { mutableStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var expandedGroupDropdown by remember { mutableStateOf(false) }
+
+    val effectiveMinutes = if (useCustomDelay) delayMinutes.toInt() else defaultDelayMinutes
+    val delayType = when {
+        useSpecificTime -> "Specific Time"
+        useCustomDelay -> "Custom"
+        else -> "Default"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Configure ${contact.displayName}") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = contact.phoneNumber,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Enable Reminders")
+                    Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Group assignment dropdown
+                Text("Group", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { expandedGroupDropdown = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val groupName = groups.find { it.id == selectedGroupId }?.name ?: "None (No Group)"
+                        Text("Group: $groupName")
+                    }
+                    DropdownMenu(
+                        expanded = expandedGroupDropdown,
+                        onDismissRequest = { expandedGroupDropdown = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("None (No Group)") },
+                            onClick = {
+                                selectedGroupId = null
+                                expandedGroupDropdown = false
+                            }
+                        )
+                        groups.forEach { group ->
+                            DropdownMenuItem(
+                                text = { Text(group.name) },
+                                onClick = {
+                                    selectedGroupId = group.id
+                                    expandedGroupDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Use Specific Clock Time")
+                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
+                }
+
+                if (useSpecificTime) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { specificHour = (specificHour + 1) % 24 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Hour: ${String.format(Locale.getDefault(), "%02d", specificHour)}")
+                        }
+                        OutlinedButton(
+                            onClick = { specificMinute = (specificMinute + 15) % 60 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Min: ${String.format(Locale.getDefault(), "%02d", specificMinute)}")
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Custom Delay")
+                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+                    }
+
+                    if (useCustomDelay) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Delay: ${delayMinutes.toInt()} minutes",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Slider(
+                            value = delayMinutes,
+                            onValueChange = { delayMinutes = it },
+                            valueRange = 1f..120f,
+                            steps = 119
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Effective Reminder Settings",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Delay Type: $delayType",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (!useSpecificTime) {
+                            Text(
+                                text = "Applied Reminder Time: ${
+                                    when {
+                                        effectiveMinutes < 60 -> "$effectiveMinutes minutes"
+                                        effectiveMinutes % 60 == 0 -> "${effectiveMinutes / 60} hours"
+                                        else -> "${effectiveMinutes / 60} hr ${effectiveMinutes % 60} min"
+                                    }
+                                }",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Target Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                onSave(
+                    contact.copy(
+                        isReminderEnabled = isEnabled,
+                        groupId = selectedGroupId,
+                        useSpecificTime = useSpecificTime,
+                        specificHour = specificHour,
+                        specificMinute = specificMinute,
+                        customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null
+                    )
+                )
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
