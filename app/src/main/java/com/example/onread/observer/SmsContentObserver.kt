@@ -60,6 +60,21 @@ class SmsContentObserver(
             }
         }
 
+        fun calculateSpecificTriggerTime(messageTimestamp: Long, targetHour: Int, targetMinute: Int): Long {
+            val baseTime = if (messageTimestamp > 0) messageTimestamp else System.currentTimeMillis()
+            val calendar = java.util.Calendar.getInstance().apply {
+                timeInMillis = baseTime
+                set(java.util.Calendar.HOUR_OF_DAY, targetHour)
+                set(java.util.Calendar.MINUTE, targetMinute)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+                if (timeInMillis <= baseTime) {
+                    add(java.util.Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+            return calendar.timeInMillis
+        }
+
         fun normalizeSmsTimestamp(rawDate: Long): Long {
             return when {
                 rawDate <= 0 -> System.currentTimeMillis()
@@ -475,6 +490,9 @@ class SmsContentObserver(
                                         sourceTag = "RCS/SMS",
                                         savedContactsOnly = savedContactsOnly,
                                         defaultDelay = defaultDelay,
+                                        useSpecificTime = useSpecificTime,
+                                        specificHour = specificHour,
+                                        specificMinute = specificMinute,
                                         defaultContactReminderEnabled = defaultContactReminderEnabled,
                                         mutableContactSettings = mutableContactSettings
                                     )
@@ -564,6 +582,9 @@ class SmsContentObserver(
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
+                    val specificHour = settingsRepository.specificTimeHourFlow.first()
+                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
@@ -618,6 +639,9 @@ class SmsContentObserver(
                                     sourceTag = "MMS",
                                     savedContactsOnly = savedContactsOnly,
                                     defaultDelay = defaultDelay,
+                                    useSpecificTime = useSpecificTime,
+                                    specificHour = specificHour,
+                                    specificMinute = specificMinute,
                                     defaultContactReminderEnabled = defaultContactReminderEnabled,
                                     mutableContactSettings = mutableContactSettings
                                 )
@@ -652,6 +676,9 @@ class SmsContentObserver(
         sourceTag: String,
         savedContactsOnly: Boolean,
         defaultDelay: Int,
+        useSpecificTime: Boolean,
+        specificHour: Int,
+        specificMinute: Int,
         defaultContactReminderEnabled: Boolean,
         mutableContactSettings: MutableList<ContactSettingEntity>
     ) {
@@ -701,22 +728,28 @@ class SmsContentObserver(
             return
         }
 
-        val delayMinutes = when {
-            contactSetting.customDelayMinutes != null -> {
-                if (group != null && contactSetting.groupAssignedAt > contactSetting.customDelayUpdatedAt) {
+        val triggerTime = if (useSpecificTime) {
+            val targetHour = contactSetting.customSpecificHour ?: specificHour
+            val targetMinute = contactSetting.customSpecificMinute ?: specificMinute
+            calculateSpecificTriggerTime(timestampMs, targetHour, targetMinute)
+        } else {
+            val delayMinutes = when {
+                contactSetting.customDelayMinutes != null -> {
+                    if (group != null && contactSetting.groupAssignedAt > contactSetting.customDelayUpdatedAt) {
+                        group.customDelayMinutes
+                    } else {
+                        contactSetting.customDelayMinutes
+                    }
+                }
+                group != null -> {
                     group.customDelayMinutes
-                } else {
-                    contactSetting.customDelayMinutes
+                }
+                else -> {
+                    defaultDelay
                 }
             }
-            group != null -> {
-                group.customDelayMinutes
-            }
-            else -> {
-                defaultDelay
-            }
+            timestampMs + (delayMinutes * 60 * 1000L)
         }
-        val triggerTime = timestampMs + (delayMinutes * 60 * 1000L)
 
         val messageText = if (body.isNotBlank()) body else "[RCS message]"
 

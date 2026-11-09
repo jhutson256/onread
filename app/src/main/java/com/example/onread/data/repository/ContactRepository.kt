@@ -24,6 +24,10 @@ class ContactRepository(private val contactDao: ContactDao) {
         contactDao.updateAllReminderSettings(enabled)
     }
 
+    suspend fun clearCustomDelaysForClockMode() {
+        contactDao.clearCustomDelaysWithoutCustomTime()
+    }
+
     suspend fun deleteContactSetting(setting: ContactSettingEntity) {
         contactDao.deleteContactSetting(setting)
     }

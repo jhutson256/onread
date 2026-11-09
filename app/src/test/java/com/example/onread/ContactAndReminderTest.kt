@@ -4,7 +4,6 @@ import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.observer.SmsContentObserver
-import com.example.onread.service.RcsNotificationListenerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -295,5 +294,80 @@ class ContactAndReminderTest {
         val phoneNumber = "+1234567890"
         val uriString = "smsto:$phoneNumber"
         assertEquals("smsto:+1234567890", uriString)
+    }
+
+    @Test
+    fun clearCustomDelaysForClockMode_clearsDelayForContactsWithoutCustomSpecificTime() {
+        val contactWithDelayNoCustomTime = ContactSettingEntity(
+            contactId = "c1",
+            phoneNumber = "111",
+            displayName = "Alice",
+            customDelayMinutes = 15,
+            customSpecificHour = null,
+            customSpecificMinute = null
+        )
+        val contactWithCustomTime = ContactSettingEntity(
+            contactId = "c2",
+            phoneNumber = "222",
+            displayName = "Bob",
+            customDelayMinutes = null,
+            customSpecificHour = 17,
+            customSpecificMinute = 30
+        )
+        val contacts = listOf(contactWithDelayNoCustomTime, contactWithCustomTime)
+
+        val updatedContacts = contacts.map { contact ->
+            if (contact.customSpecificHour == null || contact.customSpecificMinute == null) {
+                contact.copy(customDelayMinutes = null)
+            } else {
+                contact
+            }
+        }
+
+        assertNull("Contact without custom time should have customDelayMinutes cleared", updatedContacts[0].customDelayMinutes)
+        assertEquals(17, updatedContacts[1].customSpecificHour)
+        assertEquals(30, updatedContacts[1].customSpecificMinute)
+    }
+
+    @Test
+    fun calculateSpecificTriggerTime_futureTimeSameDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 10, 0, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis // 10:00 AM on Jan 15, 2025
+
+        val targetHour = 18 // 6:00 PM
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(15, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
+    }
+
+    @Test
+    fun calculateSpecificTriggerTime_passedTimeNextDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 20, 0, 0) // 8:00 PM
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis
+
+        val targetHour = 18 // 6:00 PM (has passed today)
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(16, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH)) // Next day!
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
     }
 }
