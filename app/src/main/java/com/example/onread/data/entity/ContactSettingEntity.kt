@@ -16,5 +16,6 @@ data class ContactSettingEntity(
     val specificMinute: Int = 0,
     val groupId: String? = null,
     val customDelayUpdatedAt: Long = 0L,
-    val groupAssignedAt: Long = 0L
+    val groupAssignedAt: Long = 0L,
+    val isSavedContact: Boolean = true
 )

@@ -67,7 +67,8 @@ object ContactSyncHelper {
                                 customDelayMinutes = existing?.customDelayMinutes,
                                 customDelayUpdatedAt = existing?.customDelayUpdatedAt ?: 0L,
                                 groupId = existing?.groupId,
-                                groupAssignedAt = existing?.groupAssignedAt ?: 0L
+                                groupAssignedAt = existing?.groupAssignedAt ?: 0L,
+                                isSavedContact = true
                             )
                             contactDao.insertContactSetting(entity)
                         }

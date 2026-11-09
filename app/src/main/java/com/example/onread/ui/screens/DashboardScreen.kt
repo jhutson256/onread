@@ -146,10 +146,27 @@ fun ReminderCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
-                val intent = Intent(Intent.ACTION_SENDTO).apply {
-                    data = Uri.parse("smsto:${reminder.phoneNumber}")
+                val intent = if (reminder.threadId > 0L) {
+                    Intent(Intent.ACTION_VIEW, Uri.parse("content://mms-sms/conversations/${reminder.threadId}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                } else {
+                    Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${reminder.phoneNumber}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
                 }
-                context.startActivity(intent)
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val fallbackIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${reminder.phoneNumber}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        context.startActivity(fallbackIntent)
+                    } catch (ex: Exception) {
+                        ex.printStackTrace()
+                    }
+                }
             },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {

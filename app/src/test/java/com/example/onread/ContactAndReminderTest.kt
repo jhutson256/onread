@@ -8,9 +8,15 @@ import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.observer.SmsContentObserver
 import com.example.onread.service.RcsNotificationListenerService
+import com.example.onread.util.NotificationHelper
 import com.example.onread.util.ReminderSchedulingHelper
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -175,6 +181,8 @@ class ContactAndReminderTest {
         assertNull(SmsContentObserver.cleanMmsAddress("Insert-Address-Token"))
 
         assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +15551234567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +1 (555) 123-4567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress("insert-address-token+15551234567"))
     }
 
     @Test
@@ -191,9 +199,9 @@ class ContactAndReminderTest {
         val initialMaxId = 50L
 
         assertFalse(
-            "Message prior to observerStartTime should be rejected",
+            "Message prior to observerStartTime - 10s grace period should be rejected",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime - 1000L,
+                timestamp = observerStartTime - 20000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -211,9 +219,9 @@ class ContactAndReminderTest {
         )
 
         assertTrue(
-            "Message with timestamp >= observerStartTime AND messageId > initialMaxId should be accepted",
+            "Message with timestamp >= (observerStartTime - 10s) AND messageId > initialMaxId should be accepted",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime + 1000L,
+                timestamp = observerStartTime - 5000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -443,6 +451,7 @@ class ContactAndReminderTest {
             val reminders = mutableListOf<ReminderEntity>()
             override fun getAllReminders() = flowOf(reminders)
             override fun getPendingReminders() = flowOf(reminders)
+            override suspend fun getPendingRemindersList(): List<ReminderEntity> = reminders.filter { it.status == "PENDING" }
             override fun getHistoryReminders() = flowOf<List<ReminderEntity>>(emptyList())
             override fun getReminderById(id: Long) = flowOf<ReminderEntity?>(null)
             override fun getRemindersByStatus(status: String) = flowOf<List<ReminderEntity>>(emptyList())
@@ -451,12 +460,44 @@ class ContactAndReminderTest {
                 reminders.add(newEntity)
                 return newEntity.id
             }
-            override suspend fun updateReminder(reminder: ReminderEntity) {}
+            override suspend fun updateReminder(reminder: ReminderEntity) {
+                val idx = reminders.indexOfFirst { it.id == reminder.id }
+                if (idx != -1) reminders[idx] = reminder
+            }
             override suspend fun deleteReminder(reminder: ReminderEntity) {}
             override suspend fun deleteReminderById(id: Long) {}
-            override suspend fun dismissRemindersForNumber(phoneNumber: String) {}
+            override suspend fun dismissRemindersForNumber(phoneNumber: String) {
+                reminders.forEachIndexed { i, r ->
+                    if (r.phoneNumber == phoneNumber && r.status == "PENDING") {
+                        reminders[i] = r.copy(status = "DISMISSED")
+                    }
+                }
+            }
             override suspend fun getRemindersSince(cutoffTime: Long): List<ReminderEntity> {
                 return reminders.filter { it.timestamp >= cutoffTime }
+            }
+            override suspend fun hasRecentPendingReminder(
+                phoneNumber: String,
+                phoneSuffix: String,
+                messageBody: String,
+                cutoffTime: Long
+            ): Boolean {
+                val inputDigits = phoneNumber.replace(Regex("[^0-9]"), "")
+                val bodyClean = messageBody.trim()
+                return reminders.any { existing ->
+                    if (existing.status != "PENDING") return@any false
+                    if (existing.timestamp < cutoffTime) return@any false
+
+                    val existingDigits = existing.phoneNumber.replace(Regex("[^0-9]"), "")
+                    val phoneMatches = (existing.phoneNumber == phoneNumber) ||
+                        (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() && existingDigits == inputDigits) ||
+                        (inputDigits.length >= 10 && existingDigits.length >= 10 && inputDigits.takeLast(10) == existingDigits.takeLast(10))
+
+                    val existingBodyClean = existing.messageBody.trim()
+                    val bodyMatches = existingBodyClean.equals(bodyClean, ignoreCase = true)
+
+                    phoneMatches && bodyMatches
+                }
             }
         }
 
@@ -485,7 +526,7 @@ class ContactAndReminderTest {
                 status = "PENDING"
             )
             val id2 = repository.insertReminder(r2)
-            assertEquals("Duplicate reminder should return -1L and be ignored", -1L, id2)
+            assertEquals("Exact same sender AND body within 30s should return -1L and be ignored", -1L, id2)
 
             val r3 = ReminderEntity(
                 phoneNumber = "+1234567890",
@@ -496,8 +537,145 @@ class ContactAndReminderTest {
                 status = "PENDING"
             )
             val id3 = repository.insertReminder(r3)
-            assertTrue("Different message body should be allowed", id3 > 0L)
+            assertTrue("Different message body from same sender within 30s window should be inserted", id3 > 0L)
+
+            val r4 = ReminderEntity(
+                phoneNumber = "+1234567890",
+                contactName = "Alice",
+                messageBody = "Hello world",
+                timestamp = now + 35_000L,
+                triggerTime = now + 36_000L,
+                status = "PENDING"
+            )
+            val id4 = repository.insertReminder(r4)
+            assertTrue("Exact same message after 30-second window should be inserted", id4 > 0L)
+
+            val r5 = ReminderEntity(
+                phoneNumber = "+9876543210",
+                contactName = "Bob",
+                messageBody = "Hello world",
+                timestamp = now + 10000L,
+                triggerTime = now + 11000L,
+                status = "PENDING"
+            )
+            val id5 = repository.insertReminder(r5)
+            assertTrue("Message from different contact in same group should be inserted", id5 > 0L)
         }
+    }
+
+    @Test
+    fun reminderRepository_concurrentInsertions_onlyOneSucceeds() = runBlocking {
+        val fakeDao = object : ReminderDao {
+            val reminders = mutableListOf<ReminderEntity>()
+            private val mutex = Mutex()
+
+            override fun getAllReminders() = flowOf(reminders)
+            override fun getPendingReminders() = flowOf(reminders)
+            override suspend fun getPendingRemindersList(): List<ReminderEntity> = mutex.withLock { reminders.filter { it.status == "PENDING" } }
+            override fun getHistoryReminders() = flowOf<List<ReminderEntity>>(emptyList())
+            override fun getReminderById(id: Long) = flowOf<ReminderEntity?>(null)
+            override fun getRemindersByStatus(status: String) = flowOf<List<ReminderEntity>>(emptyList())
+            override suspend fun insertReminder(reminder: ReminderEntity): Long = mutex.withLock {
+                val newEntity = reminder.copy(id = (reminders.size + 1).toLong())
+                reminders.add(newEntity)
+                newEntity.id
+            }
+            override suspend fun updateReminder(reminder: ReminderEntity) {}
+            override suspend fun deleteReminder(reminder: ReminderEntity) {}
+            override suspend fun deleteReminderById(id: Long) {}
+            override suspend fun dismissRemindersForNumber(phoneNumber: String) {}
+            override suspend fun getRemindersSince(cutoffTime: Long): List<ReminderEntity> = mutex.withLock {
+                reminders.filter { it.timestamp >= cutoffTime }
+            }
+            override suspend fun hasRecentPendingReminder(
+                phoneNumber: String,
+                phoneSuffix: String,
+                messageBody: String,
+                cutoffTime: Long
+            ): Boolean = mutex.withLock {
+                val inputDigits = phoneNumber.replace(Regex("[^0-9]"), "")
+                val bodyClean = messageBody.trim()
+                reminders.any { existing ->
+                    if (existing.status != "PENDING") return@any false
+                    if (existing.timestamp < cutoffTime) return@any false
+                    val existingDigits = existing.phoneNumber.replace(Regex("[^0-9]"), "")
+                    val phoneMatches = (existing.phoneNumber == phoneNumber) ||
+                        (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() && existingDigits == inputDigits) ||
+                        (inputDigits.length >= 10 && existingDigits.length >= 10 && inputDigits.takeLast(10) == existingDigits.takeLast(10))
+                    val bodyMatches = existing.messageBody.trim().equals(bodyClean, ignoreCase = true)
+                    phoneMatches && bodyMatches
+                }
+            }
+        }
+
+        val repository = ReminderRepository(fakeDao)
+        val now = System.currentTimeMillis()
+        val reminder = ReminderEntity(
+            phoneNumber = "+15551234567",
+            contactName = "Group Chat Member",
+            messageBody = "Group text message content",
+            timestamp = now,
+            triggerTime = now + 5000L,
+            status = "PENDING"
+        )
+
+        val results = (1..10).map {
+            async(Dispatchers.Default) {
+                repository.insertReminder(reminder)
+            }
+        }.awaitAll()
+
+        val successfulInsertions = results.filter { it > 0L }
+        val droppedDuplicates = results.filter { it == -1L }
+
+        assertEquals("Only 1 concurrent insertion should succeed", 1, successfulInsertions.size)
+        assertEquals("9 concurrent insertions should be dropped as duplicates", 9, droppedDuplicates.size)
+    }
+
+    @Test
+    fun bug3_isSavedContactDefaultAndFiltering() {
+        val savedContact = ContactSettingEntity(
+            contactId = "c1",
+            phoneNumber = "+111",
+            displayName = "Alice",
+            isSavedContact = true
+        )
+        val unsavedContact = ContactSettingEntity(
+            contactId = "c2",
+            phoneNumber = "+999",
+            displayName = "+999",
+            isSavedContact = false
+        )
+
+        val contactsList = listOf(savedContact, unsavedContact)
+        val savedOnly = contactsList.filter { it.isSavedContact }
+
+        assertEquals(1, savedOnly.size)
+        assertEquals("Alice", savedOnly[0].displayName)
+    }
+
+    @Test
+    fun bug5_threadIdInReminderEntityAndDeepLinkUri() {
+        val reminderWithThread = ReminderEntity(
+            id = 1,
+            phoneNumber = "+15551234567",
+            contactName = "John",
+            messageBody = "Group message",
+            timestamp = 1000L,
+            triggerTime = 2000L,
+            status = "PENDING",
+            threadId = 42L
+        )
+
+        assertEquals(42L, reminderWithThread.threadId)
+
+        val uriString = if (reminderWithThread.threadId > 0L) {
+            "content://mms-sms/conversations/${reminderWithThread.threadId}"
+        } else {
+            "smsto:${reminderWithThread.phoneNumber}"
+        }
+
+        assertEquals("content://mms-sms/conversations/42", uriString)
     }
 
     @Test

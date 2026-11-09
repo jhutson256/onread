@@ -17,6 +17,9 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE status = 'PENDING' ORDER BY timestamp DESC")
     fun getPendingReminders(): Flow<List<ReminderEntity>>
 
+    @Query("SELECT * FROM reminders WHERE status = 'PENDING'")
+    suspend fun getPendingRemindersList(): List<ReminderEntity>
+
     @Query("SELECT * FROM reminders WHERE status != 'PENDING' ORDER BY timestamp DESC")
     fun getHistoryReminders(): Flow<List<ReminderEntity>>
 
@@ -32,6 +35,22 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE timestamp >= :cutoffTime")
     suspend fun getRemindersSince(cutoffTime: Long): List<ReminderEntity>
 
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM reminders 
+            WHERE (phoneNumber = :phoneNumber OR (LENGTH(:phoneSuffix) >= 10 AND phoneNumber LIKE '%' || :phoneSuffix))
+              AND LOWER(TRIM(messageBody)) = LOWER(TRIM(:messageBody))
+              AND status = 'PENDING'
+              AND timestamp >= :cutoffTime
+        )
+    """)
+    suspend fun hasRecentPendingReminder(
+        phoneNumber: String,
+        phoneSuffix: String,
+        messageBody: String,
+        cutoffTime: Long
+    ): Boolean
+
     @Update
     suspend fun updateReminder(reminder: ReminderEntity)
 
@@ -41,6 +60,6 @@ interface ReminderDao {
     @Query("DELETE FROM reminders WHERE id = :id")
     suspend fun deleteReminderById(id: Long)
 
-    @Query("UPDATE reminders SET status = 'SENT' WHERE phoneNumber = :phoneNumber AND status = 'PENDING'")
+    @Query("UPDATE reminders SET status = 'DISMISSED' WHERE phoneNumber = :phoneNumber AND status = 'PENDING'")
     suspend fun dismissRemindersForNumber(phoneNumber: String)
 }

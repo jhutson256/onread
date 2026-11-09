@@ -27,8 +27,8 @@ class ContactsViewModel(application: Application) : AndroidViewModel(application
     private val groupRepository = GroupRepository(database.groupDao(), database.contactDao())
     private val settingsRepository = SettingsRepository(application)
 
-    val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allContactSettings
-        .map { list -> list.sortedBy { it.displayName.lowercase() } }
+    val contactSettings: StateFlow<List<ContactSettingEntity>> = contactRepository.allSavedContactSettings
+        .map { list -> list.filter { it.isSavedContact }.sortedBy { it.displayName.lowercase() } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val groups: StateFlow<List<GroupEntity>> = groupRepository.allGroups
