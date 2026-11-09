@@ -140,7 +140,7 @@ fun GroupsScreen(
             group = group,
             contacts = contacts,
             onDismiss = { selectedGroupForMembers = null },
-            onToggleContact = { contactId, inGroup ->
+            onToggleContact = { contactId: String, inGroup: Boolean ->
                 viewModel.assignContactToGroup(contactId, if (inGroup) group.id else null)
             }
         )
@@ -190,7 +190,7 @@ fun GroupItemCard(
                     val delayFormatted = when {
                         delay < 60 -> "$delay minutes"
                         delay % 60 == 0 -> "${delay / 60} hours"
-                        else -> "${delay / 60} hr${delay % 60} min"
+                        else -> "${delay / 60} hr ${delay % 60} min"
                     }
                     val delayType = if (group.customDelayMinutes != null) "Custom" else "Default"
                     "Delay: $delayFormatted ($delayType)"
@@ -231,4 +231,183 @@ fun GroupEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title
+        title = { Text(if (group == null) "Create Group" else "Edit Group") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Group Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Enable Reminders")
+                    Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Use Specific Clock Time")
+                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
+                }
+
+                if (useSpecificTime) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Trigger Time: ${String.format("%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { specificHour = (specificHour + 1) % 24 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Hour: ${String.format("%02d", specificHour)}")
+                        }
+                        OutlinedButton(
+                            onClick = { specificMinute = (specificMinute + 15) % 60 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Min: ${String.format("%02d", specificMinute)}")
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Custom Delay")
+                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+                    }
+
+                    if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Delay: ${
+                                when {
+                                    delayMinutes.toInt() < 60 -> "${delayMinutes.toInt()} minutes"
+                                    delayMinutes.toInt() % 60 == 0 -> "${delayMinutes.toInt() / 60} hours"
+                                    else -> "${delayMinutes.toInt() / 60} hr ${delayMinutes.toInt() % 60} min"
+                                }
+                            }",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Slider(
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes = delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        val groupId = group?.id ?: UUID.randomUUID().toString()
+                        onSave(
+                            GroupEntity(
+                                id = groupId,
+                                name = name.trim(),
+                                isReminderEnabled = isEnabled,
+                                customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null,
+                                useSpecificTime = useSpecificTime,
+                                specificHour = specificHour,
+                                specificMinute = specificMinute
+                            )
+                        )
+                    }
+                },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun GroupMembersDialog(
+    group: GroupEntity,
+    contacts: List<ContactSettingEntity>,
+    onDismiss: () -> Unit,
+    onToggleContact: (String, Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Members of ${group.name}") },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(contacts, key = { it.contactId }) { contact ->
+                    val isInGroup = contact.groupId == group.id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggleContact(contact.contactId, !isInGroup) }
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = contact.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text(text = contact.phoneNumber, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Checkbox(
+                            checked = isInGroup,
+                            onCheckedChange = { checked -> onToggleContact(contact.contactId, checked) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
+}
