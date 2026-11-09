@@ -140,7 +140,7 @@ fun GroupsScreen(
             group = group,
             contacts = contacts,
             onDismiss = { selectedGroupForMembers = null },
-            onToggleContact = { contactId, inGroup ->
+            onToggleContact = { contactId: String, inGroup: Boolean ->
                 viewModel.assignContactToGroup(contactId, if (inGroup) group.id else null)
             }
         )
@@ -169,36 +169,6 @@ fun GroupItemCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = group.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "$assignedCount contacts assigned • Delay: ${
-                            when {
-                                group.customDelayMinutes < 60 ->
-                                    "${group.customDelayMinutes} minutes"
-
-                                group.customDelayMinutes % 60 == 0 ->
-                                    "${group.customDelayMinutes / 60} hours"
-
-                                else ->
-                                    "${group.customDelayMinutes / 60} hr ${
-                                        group.customDelayMinutes % 60
-                                    } min"
-                            }
-                        }",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = group.name,
@@ -217,7 +187,13 @@ fun GroupItemCard(
                     "Schedule: Specific Time ($formattedTime)"
                 } else {
                     val delay = group.customDelayMinutes ?: defaultDelayMinutes
-                    "Schedule: Delay (${delay}m)"
+                    val delayFormatted = when {
+                        delay < 60 -> "$delay minutes"
+                        delay % 60 == 0 -> "${delay / 60} hours"
+                        else -> "${delay / 60} hr ${delay % 60} min"
+                    }
+                    val delayType = if (group.customDelayMinutes != null) "Custom" else "Default"
+                    "Delay: $delayFormatted ($delayType)"
                 }
                 Text(
                     text = scheduleText,
@@ -278,47 +254,6 @@ fun GroupEditDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                val delayOptions = remember {
-                    buildList {
-                        add(1)
-                        add(5)
-                        addAll((10..60 step 5).toList())
-                        addAll((90..720 step 30).toList())
-                        addAll((780..1440 step 60).toList())
-                    }
-                }
-
-                val currentIndex = delayOptions.indexOfFirst {
-                    it >= delayMinutes.toInt()
-                }.coerceAtLeast(0)
-
-                Text(
-                    text = "Default Delay: ${
-                        when {
-                            delayMinutes.toInt() < 60 ->
-                                "${delayMinutes.toInt()} minutes"
-
-                            delayMinutes.toInt() % 60 == 0 ->
-                                "${delayMinutes.toInt() / 60} hours"
-
-                            else ->
-                                "${delayMinutes.toInt() / 60} hr ${
-                                    delayMinutes.toInt() % 60
-                                } min"
-                        }
-                    }",
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                Slider(
-                    value = currentIndex.toFloat(),
-                    onValueChange = { value ->
-                        delayMinutes =
-                            delayOptions[value.roundToInt()].toFloat()
-                    },
-                    valueRange = 0f..delayOptions.lastIndex.toFloat(),
-                    steps = 0
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -361,13 +296,39 @@ fun GroupEditDialog(
                     }
 
                     if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Delay: ${
+                                when {
+                                    delayMinutes.toInt() < 60 -> "${delayMinutes.toInt()} minutes"
+                                    delayMinutes.toInt() % 60 == 0 -> "${delayMinutes.toInt() / 60} hours"
+                                    else -> "${delayMinutes.toInt() / 60} hr ${delayMinutes.toInt() % 60} min"
+                                }
+                            }",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
                         Slider(
-                            value = delayMinutes,
-                            onValueChange = { delayMinutes = it },
-                            valueRange = 1f..120f,
-                            steps = 119
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes = delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
                         )
                     }
                 }
