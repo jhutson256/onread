@@ -32,6 +32,18 @@ object NotificationHelper {
         }
     }
 
+    fun getMessagingAppIntent(phoneNumber: String, threadId: Long): Intent {
+        return if (threadId > 0L) {
+            Intent(Intent.ACTION_VIEW, Uri.parse("content://mms-sms/conversations/$threadId")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        } else {
+            Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$phoneNumber")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+    }
+
     fun showReminderNotification(
         context: Context,
         reminderId: Long,
@@ -40,7 +52,9 @@ object NotificationHelper {
         snoozeEnabled: Boolean = true,
         snoozeDurationMinutes: Int = 15,
         maxSnoozeCount: Int = 3,
-        currentSnoozeCount: Int = 0
+        currentSnoozeCount: Int = 0,
+        phoneNumber: String = "",
+        threadId: Long = 0L
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -60,6 +74,17 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
+
+        if (phoneNumber.isNotBlank() || threadId > 0L) {
+            val chatIntent = getMessagingAppIntent(phoneNumber, threadId)
+            val chatPendingIntent = PendingIntent.getActivity(
+                context,
+                (reminderId + 200000).toInt(),
+                chatIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, "Open Chat", chatPendingIntent)
+        }
 
         if (snoozeEnabled && currentSnoozeCount < maxSnoozeCount) {
             val snoozeIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
@@ -110,6 +135,26 @@ object NotificationHelper {
             } catch (ex: Exception) {
                 Log.e(TAG, "Failed to schedule alarm for reminder ID $reminderId", ex)
             }
+        }
+    }
+
+    fun cancelReminderAlarm(context: Context, reminderId: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
+            putExtra("EXTRA_REMINDER_ID", reminderId)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            reminderId.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+            Log.d(TAG, "Cancelled alarm for reminder ID $reminderId")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to cancel alarm for reminder ID $reminderId", e)
         }
     }
 }

@@ -11,7 +11,7 @@ import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
 
-@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, GroupEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, GroupEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun reminderDao(): ReminderDao

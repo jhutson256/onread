@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 class ContactRepository(private val contactDao: ContactDao) {
 
     val allContactSettings: Flow<List<ContactSettingEntity>> = contactDao.getAllContactSettings()
+    val allSavedContactSettings: Flow<List<ContactSettingEntity>> = contactDao.getAllSavedContactSettings()
 
     fun getContactSettingById(contactId: String): Flow<ContactSettingEntity?> {
         return contactDao.getContactSettingById(contactId)
@@ -22,6 +23,10 @@ class ContactRepository(private val contactDao: ContactDao) {
 
     suspend fun updateAllReminderSettings(enabled: Boolean) {
         contactDao.updateAllReminderSettings(enabled)
+    }
+
+    suspend fun clearCustomDelaysForClockMode() {
+        contactDao.clearCustomDelaysWithoutCustomTime()
     }
 
     suspend fun deleteContactSetting(setting: ContactSettingEntity) {

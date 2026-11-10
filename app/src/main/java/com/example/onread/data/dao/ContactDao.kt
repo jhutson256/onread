@@ -14,6 +14,9 @@ interface ContactDao {
     @Query("SELECT * FROM contact_settings ORDER BY LOWER(displayName) ASC")
     fun getAllContactSettings(): Flow<List<ContactSettingEntity>>
 
+    @Query("SELECT * FROM contact_settings WHERE isSavedContact = 1 ORDER BY LOWER(displayName) ASC")
+    fun getAllSavedContactSettings(): Flow<List<ContactSettingEntity>>
+
     @Query("SELECT * FROM contact_settings WHERE contactId = :contactId")
     fun getContactSettingById(contactId: String): Flow<ContactSettingEntity?>
 
@@ -58,6 +61,9 @@ interface ContactDao {
 
     @Query("UPDATE contact_settings SET isReminderEnabled = :enabled")
     suspend fun updateAllReminderSettings(enabled: Boolean)
+
+    @Query("UPDATE contact_settings SET customDelayMinutes = NULL WHERE specificHour IS NULL OR specificMinute IS NULL")
+    suspend fun clearCustomDelaysWithoutCustomTime()
 
     @Delete
     suspend fun deleteContactSetting(setting: ContactSettingEntity)

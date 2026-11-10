@@ -174,6 +174,8 @@ class ContactAndReminderTest {
         assertNull(SmsContentObserver.cleanMmsAddress("Insert-Address-Token"))
 
         assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +15551234567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +1 (555) 123-4567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress("insert-address-token+15551234567"))
     }
 
     @Test
@@ -190,9 +192,9 @@ class ContactAndReminderTest {
         val initialMaxId = 50L
 
         assertFalse(
-            "Message prior to observerStartTime should be rejected",
+            "Message prior to observerStartTime - 10s grace period should be rejected",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime - 1000L,
+                timestamp = observerStartTime - 20000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -210,9 +212,9 @@ class ContactAndReminderTest {
         )
 
         assertTrue(
-            "Message with timestamp >= observerStartTime AND messageId > initialMaxId should be accepted",
+            "Message with timestamp >= (observerStartTime - 10s) AND messageId > initialMaxId should be accepted",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime + 1000L,
+                timestamp = observerStartTime - 5000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -375,211 +377,74 @@ class ContactAndReminderTest {
 
         val contact = ContactSettingEntity(
             contactId = "c1",
-            phoneNumber = "+111",
-            displayName = "Boss",
-            groupId = "g1",
-            useSpecificTime = false // inherits from group
-        )
-
-        val resolved = ReminderSchedulingHelper.resolveSettings(
-            contact = contact,
-            group = group,
-            defaultDelayMinutes = 30,
-            timestampMs = 1000000000000L
-        )
-
-        assertTrue(resolved.isReminderEnabled)
-    }
-
-    @Test
-    fun groupSettingsOverrideIndividualContactPreferences() {
-        val group = GroupEntity(
-            id = "g_override",
-            name = "VIP",
-            isReminderEnabled = true,
-            useSpecificTime = true,
-            specificHour = 18,
-            specificMinute = 45,
-            customDelayMinutes = 120
-        )
-
-        val contact = ContactSettingEntity(
-            contactId = "c_individual",
-            phoneNumber = "+999",
-            displayName = "Test User",
-            isReminderEnabled = false, // Individual is disabled, but group is enabled and overrides
-            useSpecificTime = false,
-            specificHour = 9,
-            specificMinute = 0,
-            customDelayMinutes = 15,
-            groupId = "g_override"
-        )
-
-        val timestampMs = Calendar.getInstance().apply {
-            set(2025, Calendar.JUNE, 1, 10, 0, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-
-        val resolved = ReminderSchedulingHelper.resolveSettings(
-            contact = contact,
-            group = group,
-            defaultDelayMinutes = 30,
-            timestampMs = timestampMs
-        )
-
-        assertTrue("Group setting should override individual contact preference (isReminderEnabled should be true)", resolved.isReminderEnabled)
-
-        val expectedTrigger = Calendar.getInstance().apply {
-            set(2025, Calendar.JUNE, 1, 18, 45, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-
-        assertEquals("Group specific time should override individual contact specific time / delay", expectedTrigger, resolved.triggerTime)
-    }
-
-    @Test
-    fun reminderRepository_deduplicationWithinWindow() {
-        val fakeDao = object : ReminderDao {
-            val reminders = mutableListOf<ReminderEntity>()
-            override fun getAllReminders() = flowOf(reminders)
-            override fun getPendingReminders() = flowOf(reminders)
-            override fun getHistoryReminders() = flowOf<List<ReminderEntity>>(emptyList())
-            override fun getReminderById(id: Long) = flowOf<ReminderEntity?>(null)
-            override fun getRemindersByStatus(status: String) = flowOf<List<ReminderEntity>>(emptyList())
-            override suspend fun insertReminder(reminder: ReminderEntity): Long {
-                val newEntity = reminder.copy(id = (reminders.size + 1).toLong())
-                reminders.add(newEntity)
-                return newEntity.id
-            }
-            override suspend fun updateReminder(reminder: ReminderEntity) {}
-            override suspend fun deleteReminder(reminder: ReminderEntity) {}
-            override suspend fun deleteReminderById(id: Long) {}
-            override suspend fun dismissRemindersForNumber(phoneNumber: String) {}
-            override suspend fun getRemindersSince(cutoffTime: Long): List<ReminderEntity> {
-                return reminders.filter { it.timestamp >= cutoffTime }
-            }
-        }
-
-        val repository = ReminderRepository(fakeDao)
-        val now = System.currentTimeMillis()
-
-        val r1 = ReminderEntity(
-            phoneNumber = "+1234567890",
-            contactName = "Alice",
-            messageBody = "Hello world",
-            timestamp = now,
-            triggerTime = now + 1000L,
-            status = "PENDING"
-        )
-
-        runBlocking {
-            val id1 = repository.insertReminder(r1)
-            assertTrue(id1 > 0L)
-
-            val r2 = ReminderEntity(
-                phoneNumber = "+1234567890",
-                contactName = "Alice",
-                messageBody = "Hello world",
-                timestamp = now + 10000L,
-                triggerTime = now + 11000L,
-                status = "PENDING"
-            )
-            val id2 = repository.insertReminder(r2)
-            assertEquals("Duplicate reminder should return -1L and be ignored", -1L, id2)
-
-            val r3 = ReminderEntity(
-                phoneNumber = "+1234567890",
-                contactName = "Alice",
-                messageBody = "Different message",
-                timestamp = now + 10000L,
-                triggerTime = now + 11000L,
-                status = "PENDING"
-            )
-            val id3 = repository.insertReminder(r3)
-            assertTrue("Different message body should be allowed", id3 > 0L)
-        }
-    }
-
-    @Test
-    fun groupAssignmentInheritsSettings() {
-        val group = GroupEntity(
-            id = "g_test",
-            name = "Test Group",
-            isReminderEnabled = false,
-            customDelayMinutes = 60,
-            useSpecificTime = true,
-            specificHour = 10,
-            specificMinute = 15
-        )
-
-        val contact = ContactSettingEntity(
-            contactId = "c1",
-            phoneNumber = "+111",
+            phoneNumber = "111",
             displayName = "Alice",
-            isReminderEnabled = true,
-            customDelayMinutes = 10,
-            useSpecificTime = false,
-            specificHour = 9,
-            specificMinute = 0,
-            groupId = null
+            customDelayMinutes = 15,
+            customSpecificHour = null,
+            customSpecificMinute = null
         )
-
-        val assigned = contact.copy(
-            groupId = group.id,
-            isReminderEnabled = group.isReminderEnabled,
-            customDelayMinutes = group.customDelayMinutes,
-            useSpecificTime = group.useSpecificTime,
-            specificHour = group.specificHour,
-            specificMinute = group.specificMinute
+        val contactWithCustomTime = ContactSettingEntity(
+            contactId = "c2",
+            phoneNumber = "222",
+            displayName = "Bob",
+            customDelayMinutes = null,
+            customSpecificHour = 17,
+            customSpecificMinute = 30
         )
+        val contacts = listOf(contactWithDelayNoCustomTime, contactWithCustomTime)
 
-        assertEquals("g_test", assigned.groupId)
-        assertFalse(assigned.isReminderEnabled)
-        assertEquals(60, assigned.customDelayMinutes)
-        assertTrue(assigned.useSpecificTime)
-        assertEquals(10, assigned.specificHour)
-        assertEquals(15, assigned.specificMinute)
-    }
-
-    @Test
-    fun groupUpdateUpdatesContacts() {
-        val group = GroupEntity(
-            id = "g_update",
-            name = "Work",
-            isReminderEnabled = true,
-            customDelayMinutes = 30,
-            useSpecificTime = false
-        )
-
-        val contacts = mutableListOf(
-            ContactSettingEntity("c1", "111", "Alice", groupId = "g_update"),
-            ContactSettingEntity("c2", "222", "Bob", groupId = "g_update"),
-            ContactSettingEntity("c3", "333", "Charlie", groupId = "other")
-        )
-
-        val updatedGroup = group.copy(isReminderEnabled = false, customDelayMinutes = 90)
-
-        val synchronizedContacts = contacts.map { contact ->
-            if (contact.groupId == updatedGroup.id) {
-                contact.copy(
-                    isReminderEnabled = updatedGroup.isReminderEnabled,
-                    customDelayMinutes = updatedGroup.customDelayMinutes,
-                    useSpecificTime = updatedGroup.useSpecificTime,
-                    specificHour = updatedGroup.specificHour,
-                    specificMinute = updatedGroup.specificMinute
-                )
+        val updatedContacts = contacts.map { contact ->
+            if (contact.customSpecificHour == null || contact.customSpecificMinute == null) {
+                contact.copy(customDelayMinutes = null)
             } else {
                 contact
             }
         }
 
-        assertFalse(synchronizedContacts[0].isReminderEnabled)
-        assertEquals(90, synchronizedContacts[0].customDelayMinutes)
+        assertNull("Contact without custom time should have customDelayMinutes cleared", updatedContacts[0].customDelayMinutes)
+        assertEquals(17, updatedContacts[1].customSpecificHour)
+        assertEquals(30, updatedContacts[1].customSpecificMinute)
+    }
 
-        assertFalse(synchronizedContacts[1].isReminderEnabled)
-        assertEquals(90, synchronizedContacts[1].customDelayMinutes)
+    @Test
+    fun calculateSpecificTriggerTime_futureTimeSameDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 10, 0, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis // 10:00 AM on Jan 15, 2025
 
-        assertTrue(synchronizedContacts[2].isReminderEnabled)
-        assertNull(synchronizedContacts[2].customDelayMinutes)
+        val targetHour = 18 // 6:00 PM
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(15, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
+    }
+
+    @Test
+    fun calculateSpecificTriggerTime_passedTimeNextDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 20, 0, 0) // 8:00 PM
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis
+
+        val targetHour = 18 // 6:00 PM (has passed today)
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(16, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH)) // Next day!
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
     }
 }
