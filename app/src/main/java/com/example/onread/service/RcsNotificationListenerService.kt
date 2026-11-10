@@ -88,6 +88,9 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
         val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+        val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
+        val specificHour = settingsRepository.specificTimeHourFlow.first()
+        val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
         val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
 
         val allContacts = contactDao.getAllContactSettings().first()
@@ -126,7 +129,15 @@ class RcsNotificationListenerService : NotificationListenerService() {
             Log.d(TAG, "Inserted new ContactSettingEntity for '${contactSetting.displayName}' (${contactSetting.phoneNumber})")
         }
 
-        val triggerTime = resolved.triggerTime
+        val triggerTime = if (useSpecificTime) {
+            // Updated to match your entity properties (specificHour/specificMinute)
+            val targetHour = contactSetting.specificHour ?: specificHour
+            val targetMinute = contactSetting.specificMinute ?: specificMinute
+            calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        } else {
+            val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+            calculateTriggerTime(postTime, delayMinutes)
+        }
 
         val reminder = ReminderEntity(
             phoneNumber = contactSetting.phoneNumber,
@@ -223,6 +234,21 @@ class RcsNotificationListenerService : NotificationListenerService() {
         fun calculateTriggerTime(postTime: Long, delayMinutes: Int): Long {
             val baseTime = if (postTime > 0) postTime else System.currentTimeMillis()
             return baseTime + (delayMinutes * 60 * 1000L)
+        }
+
+        fun calculateSpecificTriggerTime(postTime: Long, targetHour: Int, targetMinute: Int): Long {
+            val baseTime = if (postTime > 0) postTime else System.currentTimeMillis()
+            val calendar = java.util.Calendar.getInstance().apply {
+                timeInMillis = baseTime
+                set(java.util.Calendar.HOUR_OF_DAY, targetHour)
+                set(java.util.Calendar.MINUTE, targetMinute)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+                if (timeInMillis <= baseTime) {
+                    add(java.util.Calendar.DAY_OF_YEAR, 1)
+                }
+            }
+            return calendar.timeInMillis
         }
 
         fun resolveContactSetting(
@@ -339,7 +365,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         private fun scheduleReminderAlarm(context: Context, reminderId: Long, triggerTime: Long) {
-            val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
                 putExtra("EXTRA_REMINDER_ID", reminderId)
             }

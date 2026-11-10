@@ -62,6 +62,9 @@ interface ContactDao {
     @Query("UPDATE contact_settings SET isReminderEnabled = :enabled")
     suspend fun updateAllReminderSettings(enabled: Boolean)
 
+    @Query("UPDATE contact_settings SET customDelayMinutes = NULL WHERE specificHour IS NULL OR specificMinute IS NULL")
+    suspend fun clearCustomDelaysWithoutCustomTime()
+
     @Delete
     suspend fun deleteContactSetting(setting: ContactSettingEntity)
 }
