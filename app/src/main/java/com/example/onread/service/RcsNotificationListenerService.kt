@@ -18,9 +18,11 @@ import androidx.core.content.ContextCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
+import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,6 +83,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
         val database = AppDatabase.getDatabase(applicationContext)
         val contactDao = database.contactDao()
         val reminderDao = database.reminderDao()
+        val groupDao = database.groupDao()
         val settingsRepository = SettingsRepository(applicationContext)
 
         val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
@@ -105,21 +108,18 @@ class RcsNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        if (!contactSetting.isReminderEnabled) {
-            Log.d(TAG, "Skipping notification for '${contactSetting.displayName}': Reminders disabled for contact")
-            return
-        }
+        val groups = groupDao.getAllGroups().first()
+        val group = groups.find { it.id == contactSetting.groupId }
 
-        // Deduplication check: ignore if pending reminder exists with same text for contact within 30s
-        val pendingReminders = reminderDao.getPendingReminders().first()
-        val isDuplicate = pendingReminders.any { pending ->
-            (pending.phoneNumber == contactSetting.phoneNumber || pending.contactName.equals(contactSetting.displayName, ignoreCase = true)) &&
-                    pending.messageBody == messageText &&
-                    Math.abs(pending.timestamp - postTime) < 30_000L
-        }
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contactSetting,
+            group = group,
+            defaultDelayMinutes = defaultDelay,
+            timestampMs = postTime
+        )
 
-        if (isDuplicate) {
-            Log.d(TAG, "Skipping duplicate notification reminder for ${contactSetting.displayName}")
+        if (!resolved.isReminderEnabled) {
+            Log.d(TAG, "Skipping notification for '${contactSetting.displayName}': Reminders disabled for contact or group")
             return
         }
 
@@ -147,7 +147,13 @@ class RcsNotificationListenerService : NotificationListenerService() {
             status = "PENDING"
         )
 
-        val reminderId = reminderDao.insertReminder(reminder)
+        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderId = reminderRepository.insertReminder(reminder)
+        if (reminderId <= 0L) {
+            Log.d(TAG, "Skipping duplicate notification reminder for ${contactSetting.displayName} (duplicate within 60s)")
+            return
+        }
+
         Log.d(TAG, "Inserted ReminderEntity ID $reminderId for RCS notification from ${contactSetting.displayName}")
 
         scheduleReminderAlarm(applicationContext, reminderId, triggerTime)
@@ -254,7 +260,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
             val cleanedTitle = rawTitle.trim()
             if (cleanedTitle.isEmpty()) return null
 
-            // 1. Try matching existing contact setting in Room DB by display name or phone number
             val inputDigits = cleanedTitle.replace(Regex("[^0-9]"), "")
             val matchedSetting = allContacts.find { setting ->
                 setting.displayName.equals(cleanedTitle, ignoreCase = true) ||
@@ -268,7 +273,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
                 return matchedSetting
             }
 
-            // 2. Resolve phone number and display name for new contact
             val phoneNumber: String
             val displayName: String
 
@@ -282,7 +286,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
                 phoneNumber = phoneFromSystem ?: cleanedTitle.replace(Regex("[^0-9+]"), "").ifEmpty { cleanedTitle }
             }
 
-            // 3. Respect savedContactsOnly
             val isSavedInSystem = ContactSyncHelper.isContactSaved(context, phoneNumber) ||
                     (getPhoneNumberFromName(context, displayName) != null)
 
@@ -296,7 +299,8 @@ class RcsNotificationListenerService : NotificationListenerService() {
                 phoneNumber = phoneNumber,
                 displayName = displayName,
                 isReminderEnabled = defaultContactReminderEnabled,
-                customDelayMinutes = null
+                customDelayMinutes = null,
+                isSavedContact = isSavedInSystem
             )
         }
 

@@ -224,7 +224,10 @@ a:focus-visible {
   border-radius: 28px;
   box-shadow: 0 10px 40px rgba(31, 29, 43, 0.2);
 }
-
+video {
+  display: block;
+  max-width: 100%;
+}
 /* Logo in the header */
 .logo-img {
   height: 80px;

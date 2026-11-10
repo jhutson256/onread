@@ -18,27 +18,33 @@ class OnreadApplication : Application() {
         NotificationHelper.createNotificationChannel(this)
 
         val database = AppDatabase.getDatabase(this)
+        
+        // Initialize observers
         smsContentObserver = SmsContentObserver(
             Handler(Looper.getMainLooper()),
             this,
-            database,
+            database
         )
 
+        // List of URIs to observe for SMS/MMS
         val urisToObserve = listOf(
             Uri.parse("content://sms"),
+            Uri.parse("content://sms/inbox"),
             Uri.parse("content://mms"),
+            Uri.parse("content://mms/inbox"),
             Uri.parse("content://mms-sms"),
             Uri.parse("content://mms-sms/conversations")
         )
 
+        // Register SMS content observer for the URIs
         for (uri in urisToObserve) {
             try {
                 contentResolver.registerContentObserver(
                     uri,
                     true,
-                    smsContentObserver,
+                    smsContentObserver
                 )
-                Log.d("OnreadApplication", "Registered ContentObserver for $uri")
+                Log.d("ONREAD_CONSISTENCY", "Registered ContentObserver for $uri")
             } catch (e: SecurityException) {
                 Log.w("OnreadApplication", "SecurityException registering ContentObserver for $uri", e)
             } catch (e: Exception) {

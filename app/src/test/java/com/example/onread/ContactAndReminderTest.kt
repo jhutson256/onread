@@ -1,14 +1,18 @@
 package com.example.onread
 
+import com.example.onread.data.dao.ReminderDao
 import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.observer.SmsContentObserver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class ContactAndReminderTest {
 
@@ -167,6 +171,8 @@ class ContactAndReminderTest {
         assertNull(SmsContentObserver.cleanMmsAddress("Insert-Address-Token"))
 
         assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +15551234567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +1 (555) 123-4567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress("insert-address-token+15551234567"))
     }
 
     @Test
@@ -183,9 +189,9 @@ class ContactAndReminderTest {
         val initialMaxId = 50L
 
         assertFalse(
-            "Message prior to observerStartTime should be rejected",
+            "Message prior to observerStartTime - 10s grace period should be rejected",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime - 1000L,
+                timestamp = observerStartTime - 20000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -203,9 +209,9 @@ class ContactAndReminderTest {
         )
 
         assertTrue(
-            "Message with timestamp >= observerStartTime AND messageId > initialMaxId should be accepted",
+            "Message with timestamp >= (observerStartTime - 10s) AND messageId > initialMaxId should be accepted",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime + 1000L,
+                timestamp = observerStartTime - 5000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -285,8 +291,8 @@ class ContactAndReminderTest {
         )
         assertNull(contact.groupId)
 
-        val updated = contact.copy(groupId = 5L)
-        assertEquals(5L, updated.groupId)
+        val updated = contact.copy(groupId = "5")
+        assertEquals("5", updated.groupId)
     }
 
     @Test
