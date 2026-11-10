@@ -1,8 +1,3 @@
-The compilation errors in `RcsNotificationListenerService.kt` are caused by referencing `customSpecificHour` and `customSpecificMinute` (which do not exist in your `ContactSettingEntity` class; your entity uses `specificHour` and `specificMinute` instead).
-
-Here is the corrected, fully-compiling version of `RcsNotificationListenerService.kt`:
-
-```kotlin
 package com.example.onread.service
 
 import android.Manifest
@@ -399,5 +394,3 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
     }
 }
-
-```
