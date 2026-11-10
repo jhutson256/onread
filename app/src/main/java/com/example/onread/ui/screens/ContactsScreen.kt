@@ -27,7 +27,7 @@ import com.google.accompanist.permissions.rememberPermissionState
 import java.util.Locale
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun ContactsScreen(
     viewModel: ContactsViewModel = viewModel()
@@ -304,10 +304,10 @@ fun ContactSettingDialog(
     var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
     var selectedGroupId by remember { mutableStateOf(contact.groupId) }
     var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
-    var specificHour by remember { mutableStateOf(contact.specificHour) }
-    var specificMinute by remember { mutableStateOf(contact.specificMinute) }
+    var specificHour by remember { mutableIntStateOf(contact.specificHour) }
+    var specificMinute by remember { mutableIntStateOf(contact.specificMinute) }
     var useCustomDelay by remember { mutableStateOf(contact.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var delayMinutes by remember { mutableFloatStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
     var expandedGroupDropdown by remember { mutableStateOf(false) }
 
     val effectiveMinutes = if (useCustomDelay) delayMinutes.toInt() else defaultDelayMinutes
@@ -422,16 +422,45 @@ fun ContactSettingDialog(
                     }
 
                     if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
                         Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
-                            text = "Delay: ${delayMinutes.toInt()} minutes",
+                            text = when {
+                                delayMinutes < 60 ->
+                                    "Delay: ${delayMinutes.toInt()} minutes"
+
+                                delayMinutes.toInt() % 60 == 0 ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hours"
+
+                                else ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hr ${
+                                        delayMinutes.toInt() % 60
+                                    } min"
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                         Slider(
-                            value = delayMinutes,
-                            onValueChange = { delayMinutes = it },
-                            valueRange = 1f..120f,
-                            steps = 119
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes =
+                                    delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
                         )
                     }
                 }
