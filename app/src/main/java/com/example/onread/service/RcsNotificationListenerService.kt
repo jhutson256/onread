@@ -1,3 +1,8 @@
+The compilation errors in `RcsNotificationListenerService.kt` are caused by referencing `customSpecificHour` and `customSpecificMinute` (which do not exist in your `ContactSettingEntity` class; your entity uses `specificHour` and `specificMinute` instead).
+
+Here is the corrected, fully-compiling version of `RcsNotificationListenerService.kt`:
+
+```kotlin
 package com.example.onread.service
 
 import android.Manifest
@@ -130,8 +135,9 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         val triggerTime = if (useSpecificTime) {
-            val targetHour = contactSetting.customSpecificHour ?: specificHour
-            val targetMinute = contactSetting.customSpecificMinute ?: specificMinute
+            // Updated to match your entity properties (specificHour/specificMinute)
+            val targetHour = contactSetting.specificHour ?: specificHour
+            val targetMinute = contactSetting.specificMinute ?: specificMinute
             calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
         } else {
             val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
@@ -364,7 +370,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         private fun scheduleReminderAlarm(context: Context, reminderId: Long, triggerTime: Long) {
-            val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
                 putExtra("EXTRA_REMINDER_ID", reminderId)
             }
@@ -393,3 +399,5 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
     }
 }
+
+```
