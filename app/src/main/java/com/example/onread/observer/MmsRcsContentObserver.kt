@@ -88,6 +88,9 @@ class MmsRcsContentObserver(
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
+                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
+                    val specificHour = settingsRepository.specificTimeHourFlow.first()
+                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
                     while (it.moveToNext()) {
@@ -146,7 +149,9 @@ class MmsRcsContentObserver(
                                     phoneNumber = normalizedAddress.ifEmpty { senderAddress },
                                     displayName = displayName,
                                     isReminderEnabled = true,
-                                    customDelayMinutes = null
+                                    customDelayMinutes = null,
+                                    customSpecificHour = null,
+                                    customSpecificMinute = null
                                 )
                                 contactDao.insertContactSetting(contactSetting)
                                 mutableContactSettings.add(contactSetting)
@@ -158,8 +163,24 @@ class MmsRcsContentObserver(
                                 continue
                             }
 
-                            val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
-                            val triggerTime = date + (delayMinutes * 60 * 1000L)
+                            val triggerTime = if (useSpecificTime) {
+                                val targetHour = contactSetting.customSpecificHour ?: specificHour
+                                val targetMinute = contactSetting.customSpecificMinute ?: specificMinute
+                                val calendar = java.util.Calendar.getInstance().apply {
+                                    timeInMillis = date
+                                    set(java.util.Calendar.HOUR_OF_DAY, targetHour)
+                                    set(java.util.Calendar.MINUTE, targetMinute)
+                                    set(java.util.Calendar.SECOND, 0)
+                                    set(java.util.Calendar.MILLISECOND, 0)
+                                    if (timeInMillis <= date) {
+                                        add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                    }
+                                }
+                                calendar.timeInMillis
+                            } else {
+                                val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
+                                date + (delayMinutes * 60 * 1000L)
+                            }
 
                             val reminder = ReminderEntity(
                                 phoneNumber = senderAddress,

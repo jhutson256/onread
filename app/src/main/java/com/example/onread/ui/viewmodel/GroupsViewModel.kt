@@ -56,7 +56,14 @@ class GroupsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val contact = database.contactDao().getContactSettingById(contactId).first()
             if (contact != null) {
-                contactRepository.insertOrUpdateContactSetting(contact.copy(groupId = groupId))
+                val groupChanged = contact.groupId != groupId
+                val now = System.currentTimeMillis()
+                contactRepository.insertOrUpdateContactSetting(
+                    contact.copy(
+                        groupId = groupId,
+                        groupAssignedAt = if (groupChanged) now else contact.groupAssignedAt
+                    )
+                )
             }
         }
     }

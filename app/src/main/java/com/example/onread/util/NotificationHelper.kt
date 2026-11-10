@@ -10,11 +10,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.example.onread.MainActivity
+import com.example.onread.receiver.ReminderAlarmReceiver
 
 object NotificationHelper {
     const val CHANNEL_ID = "text_reminders_channel"
     private const val CHANNEL_NAME = "Text Reminders"
     private const val CHANNEL_DESCRIPTION = "Reminders to reply to text messages"
+    const val ACTION_SNOOZE = "com.example.onread.ACTION_SNOOZE"
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -27,9 +30,26 @@ object NotificationHelper {
         }
     }
 
-    fun showReminderNotification(context: Context, reminderId: Long, contactName: String, messageBody: String, phoneNumber: String) {
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("smsto:$phoneNumber")
+    fun showReminderNotification(
+        context: Context,
+        reminderId: Long,
+        contactName: String,
+        messageBody: String,
+        phoneNumber: String = "",
+        snoozeEnabled: Boolean = true,
+        snoozeDurationMinutes: Int = 15,
+        maxSnoozeCount: Int = 3,
+        currentSnoozeCount: Int = 0
+    ) {
+        val intent = if (phoneNumber.isNotBlank()) {
+            Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.parse("smsto:$phoneNumber")
+            }
+        } else {
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("OPEN_DASHBOARD", true)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -46,6 +66,24 @@ object NotificationHelper {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
 
+        if (snoozeEnabled && currentSnoozeCount < maxSnoozeCount) {
+            val snoozeIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
+                action = ACTION_SNOOZE
+                putExtra("EXTRA_REMINDER_ID", reminderId)
+            }
+            val snoozePendingIntent = PendingIntent.getBroadcast(
+                context,
+                reminderId.toInt() + 10000,
+                snoozeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(
+                R.drawable.ic_menu_agenda,
+                "Snooze (${snoozeDurationMinutes}m)",
+                snoozePendingIntent
+            )
+        }
+
         try {
             with(NotificationManagerCompat.from(context)) {
                 notify(reminderId.toInt(), builder.build())
@@ -53,5 +91,9 @@ object NotificationHelper {
         } catch (e: SecurityException) {
             e.printStackTrace()
         }
+    }
+
+    fun showReminderNotification(context: Context, reminderId: Long, contactName: String, messageBody: String, phoneNumber: String) {
+        showReminderNotification(context, reminderId, contactName, messageBody, phoneNumber, true, 15, 3, 0)
     }
 }

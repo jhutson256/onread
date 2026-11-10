@@ -11,7 +11,7 @@ import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.ReminderEntity
 
-@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, ContactGroupEntity::class], version = 3, exportSchema = false)
+@Database(entities = [ContactSettingEntity::class, ReminderEntity::class, ContactGroupEntity::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun reminderDao(): ReminderDao
@@ -28,6 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "text_reminder_database"
                 )
+                    .fallbackToDestructiveMigration(true)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
