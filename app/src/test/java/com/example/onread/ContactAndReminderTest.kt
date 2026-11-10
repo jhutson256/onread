@@ -7,7 +7,6 @@ import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.observer.SmsContentObserver
-import com.example.onread.service.RcsNotificationListenerService
 import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -359,7 +358,8 @@ class ContactAndReminderTest {
             defaultDelayMinutes = 30
         )
 
-        assertEquals(messageTime + (45 * 60 * 1000L), trigger)
+        val expectedTrigger = messageTime + (45 * 60 * 1000L)
+        assertEquals(expectedTrigger, trigger)
     }
 
     @Test

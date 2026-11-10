@@ -31,7 +31,7 @@ import com.example.onread.ui.viewmodel.SettingsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
-import kotlin.math.abs
+import java.util.Locale
 import kotlin.math.roundToInt
 
 fun Context.findActivity(): Activity? = when (this) {
@@ -40,7 +40,7 @@ fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
@@ -269,7 +269,7 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     val displayHour = if (specificTimeHour == 0) 12 else if (specificTimeHour > 12) specificTimeHour - 12 else specificTimeHour
                                     val amPm = if (specificTimeHour >= 12) "PM" else "AM"
-                                    val formattedTime = String.format("%d:%02d %s", displayHour, specificTimeMinute, amPm)
+                                    val formattedTime = String.format(Locale.getDefault(), "%d:%02d %s", displayHour, specificTimeMinute, amPm)
                                     Text(
                                         text = formattedTime,
                                         style = MaterialTheme.typography.titleLarge,
@@ -293,26 +293,6 @@ fun SettingsScreen(
                                     Text("Change Time")
                                 }
                             }
-                        } else {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Default Reminder Delay",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "$defaultDelayMinutes minutes",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Slider(
-                                value = defaultDelayMinutes.toFloat(),
-                                onValueChange = { viewModel.updateDefaultDelayMinutes(it.toInt()) },
-                                valueRange = 5f..120f,
-                                steps = 22
-                            )
                         }
                     }
                 }

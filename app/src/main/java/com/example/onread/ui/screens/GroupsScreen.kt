@@ -18,10 +18,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.GroupEntity
 import com.example.onread.ui.viewmodel.GroupsViewModel
+import java.util.Locale
 import kotlin.math.roundToInt
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsScreen(
     viewModel: GroupsViewModel = viewModel()
@@ -183,7 +183,7 @@ fun GroupItemCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 val scheduleText = if (group.useSpecificTime) {
-                    val formattedTime = String.format("%02d:%02d", group.specificHour, group.specificMinute)
+                    val formattedTime = String.format(Locale.getDefault(), "%02d:%02d", group.specificHour, group.specificMinute)
                     "Schedule: Specific Time ($formattedTime)"
                 } else {
                     val delay = group.customDelayMinutes ?: defaultDelayMinutes
@@ -224,10 +224,10 @@ fun GroupEditDialog(
     var name by remember { mutableStateOf(group?.name ?: "") }
     var isEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
     var useSpecificTime by remember { mutableStateOf(group?.useSpecificTime ?: false) }
-    var specificHour by remember { mutableStateOf(group?.specificHour ?: 9) }
-    var specificMinute by remember { mutableStateOf(group?.specificMinute ?: 0) }
+    var specificHour by remember { mutableIntStateOf(group?.specificHour ?: 9) }
+    var specificMinute by remember { mutableIntStateOf(group?.specificMinute ?: 0) }
     var useCustomDelay by remember { mutableStateOf(group?.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var delayMinutes by remember { mutableFloatStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -265,7 +265,7 @@ fun GroupEditDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Trigger Time: ${String.format("%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
