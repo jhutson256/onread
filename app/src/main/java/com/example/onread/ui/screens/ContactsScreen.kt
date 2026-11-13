@@ -1,6 +1,7 @@
 package com.example.onread.ui.screens
 
 import android.Manifest
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,11 +24,10 @@ import com.example.onread.ui.viewmodel.ContactsViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
-import androidx.compose.animation.core.*
-import androidx.compose.ui.graphics.graphicsLayer
 import java.util.Locale
+import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun ContactsScreen(
     viewModel: ContactsViewModel = viewModel()
@@ -52,7 +53,6 @@ fun ContactsScreen(
     LaunchedEffect(isSyncing) {
         if (isSyncing) {
             rotation.snapTo(0f)
-
             rotation.animateTo(
                 targetValue = -360f,
                 animationSpec = infiniteRepeatable(
@@ -209,7 +209,7 @@ fun ContactsScreen(
         }
     }
 
-    // Contact Setting Dialog / Bottom Sheet
+    // Contact Setting Dialog
     selectedContact?.let { contact ->
         ContactSettingDialog(
             contact = contact,
@@ -232,6 +232,9 @@ fun ContactItemCard(
     onClick: () -> Unit,
     onToggleReminder: (Boolean) -> Unit
 ) {
+    val effectiveDelayMinutes = contact.customDelayMinutes ?: defaultDelayMinutes
+    val delayType = if (contact.customDelayMinutes != null) "Custom" else "Default"
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -267,10 +270,13 @@ fun ContactItemCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 val scheduleText = if (contact.useSpecificTime) {
                     "Specific Time: ${String.format(Locale.getDefault(), "%02d:%02d", contact.specificHour, contact.specificMinute)}"
-                } else if (contact.customDelayMinutes != null) {
-                    "Delay: ${contact.customDelayMinutes}m (Custom)"
                 } else {
-                    "Delay: ${defaultDelayMinutes}m (Default)"
+                    val delayFormatted = when {
+                        effectiveDelayMinutes < 60 -> "$effectiveDelayMinutes minutes"
+                        effectiveDelayMinutes % 60 == 0 -> "${effectiveDelayMinutes / 60} hours"
+                        else -> "${effectiveDelayMinutes / 60} hr ${effectiveDelayMinutes % 60} min"
+                    }
+                    "Delay: $delayFormatted ($delayType)"
                 }
                 Text(
                     text = scheduleText,
@@ -298,11 +304,18 @@ fun ContactSettingDialog(
     var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
     var selectedGroupId by remember { mutableStateOf(contact.groupId) }
     var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
-    var specificHour by remember { mutableStateOf(contact.specificHour) }
-    var specificMinute by remember { mutableStateOf(contact.specificMinute) }
+    var specificHour by remember { mutableIntStateOf(contact.specificHour) }
+    var specificMinute by remember { mutableIntStateOf(contact.specificMinute) }
     var useCustomDelay by remember { mutableStateOf(contact.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var delayMinutes by remember { mutableFloatStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
     var expandedGroupDropdown by remember { mutableStateOf(false) }
+
+    val effectiveMinutes = if (useCustomDelay) delayMinutes.toInt() else defaultDelayMinutes
+    val delayType = when {
+        useSpecificTime -> "Specific Time"
+        useCustomDelay -> "Custom"
+        else -> "Default"
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -374,7 +387,11 @@ fun ContactSettingDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = "Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -405,14 +422,86 @@ fun ContactSettingDialog(
                     }
 
                     if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
-                        Slider(
-                            value = delayMinutes,
-                            onValueChange = { delayMinutes = it },
-                            valueRange = 1f..120f,
-                            steps = 119
+
+                        Text(
+                            text = when {
+                                delayMinutes < 60 ->
+                                    "Delay: ${delayMinutes.toInt()} minutes"
+
+                                delayMinutes.toInt() % 60 == 0 ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hours"
+
+                                else ->
+                                    "Delay: ${delayMinutes.toInt() / 60} hr ${
+                                        delayMinutes.toInt() % 60
+                                    } min"
+                            },
+                            style = MaterialTheme.typography.bodySmall
                         )
+                        Slider(
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes =
+                                    delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Effective Reminder Settings",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Delay Type: $delayType",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (!useSpecificTime) {
+                            Text(
+                                text = "Applied Reminder Time: ${
+                                    when {
+                                        effectiveMinutes < 60 -> "$effectiveMinutes minutes"
+                                        effectiveMinutes % 60 == 0 -> "${effectiveMinutes / 60} hours"
+                                        else -> "${effectiveMinutes / 60} hr ${effectiveMinutes % 60} min"
+                                    }
+                                }",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Target Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }

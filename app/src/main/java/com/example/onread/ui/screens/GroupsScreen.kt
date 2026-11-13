@@ -18,9 +18,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.onread.data.entity.ContactSettingEntity
 import com.example.onread.data.entity.GroupEntity
 import com.example.onread.ui.viewmodel.GroupsViewModel
+import java.util.Locale
+import kotlin.math.roundToInt
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsScreen(
     viewModel: GroupsViewModel = viewModel()
@@ -139,7 +140,7 @@ fun GroupsScreen(
             group = group,
             contacts = contacts,
             onDismiss = { selectedGroupForMembers = null },
-            onToggleContact = { contactId, inGroup ->
+            onToggleContact = { contactId: String, inGroup: Boolean ->
                 viewModel.assignContactToGroup(contactId, if (inGroup) group.id else null)
             }
         )
@@ -182,11 +183,17 @@ fun GroupItemCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 val scheduleText = if (group.useSpecificTime) {
-                    val formattedTime = String.format("%02d:%02d", group.specificHour, group.specificMinute)
+                    val formattedTime = String.format(Locale.getDefault(), "%02d:%02d", group.specificHour, group.specificMinute)
                     "Schedule: Specific Time ($formattedTime)"
                 } else {
                     val delay = group.customDelayMinutes ?: defaultDelayMinutes
-                    "Schedule: Delay (${delay}m)"
+                    val delayFormatted = when {
+                        delay < 60 -> "$delay minutes"
+                        delay % 60 == 0 -> "${delay / 60} hours"
+                        else -> "${delay / 60} hr ${delay % 60} min"
+                    }
+                    val delayType = if (group.customDelayMinutes != null) "Custom" else "Default"
+                    "Delay: $delayFormatted ($delayType)"
                 }
                 Text(
                     text = scheduleText,
@@ -217,10 +224,10 @@ fun GroupEditDialog(
     var name by remember { mutableStateOf(group?.name ?: "") }
     var isEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
     var useSpecificTime by remember { mutableStateOf(group?.useSpecificTime ?: false) }
-    var specificHour by remember { mutableStateOf(group?.specificHour ?: 9) }
-    var specificMinute by remember { mutableStateOf(group?.specificMinute ?: 0) }
+    var specificHour by remember { mutableIntStateOf(group?.specificHour ?: 9) }
+    var specificMinute by remember { mutableIntStateOf(group?.specificMinute ?: 0) }
     var useCustomDelay by remember { mutableStateOf(group?.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var delayMinutes by remember { mutableFloatStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -258,7 +265,7 @@ fun GroupEditDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Trigger Time: ${String.format("%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -289,13 +296,39 @@ fun GroupEditDialog(
                     }
 
                     if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Delay: ${
+                                when {
+                                    delayMinutes.toInt() < 60 -> "${delayMinutes.toInt()} minutes"
+                                    delayMinutes.toInt() % 60 == 0 -> "${delayMinutes.toInt() / 60} hours"
+                                    else -> "${delayMinutes.toInt() / 60} hr ${delayMinutes.toInt() % 60} min"
+                                }
+                            }",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
                         Slider(
-                            value = delayMinutes,
-                            onValueChange = { delayMinutes = it },
-                            valueRange = 1f..120f,
-                            steps = 119
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes = delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
                         )
                     }
                 }
