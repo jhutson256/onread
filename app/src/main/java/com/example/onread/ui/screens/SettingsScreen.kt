@@ -52,6 +52,9 @@ fun SettingsScreen(
     val colorTheme by viewModel.colorTheme.collectAsState()
     val defaultDelayMinutes by viewModel.defaultDelayMinutes.collectAsState()
     val savedContactsOnly by viewModel.savedContactsOnly.collectAsState()
+    val snoozeEnabled by viewModel.snoozeEnabled.collectAsState()
+    val snoozeDurationMinutes by viewModel.snoozeDurationMinutes.collectAsState()
+    val maxSnoozeCount by viewModel.maxSnoozeCount.collectAsState()
     val useSpecificTime by viewModel.useSpecificTime.collectAsState()
     val specificTimeHour by viewModel.specificTimeHour.collectAsState()
     val specificTimeMinute by viewModel.specificTimeMinute.collectAsState()
@@ -329,6 +332,91 @@ fun SettingsScreen(
                 }
             }
 
+            // Notification Snooze Card
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Snooze Button in Notification",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Show a snooze action button on reminder notifications.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = snoozeEnabled,
+                            onCheckedChange = { viewModel.updateSnoozeEnabled(it) }
+                        )
+                    }
+                }
+            }
+
+            if (snoozeEnabled) {
+                // Snooze Duration Card
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Snooze Duration",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "$snoozeDurationMinutes minutes",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = snoozeDurationMinutes.toFloat(),
+                                onValueChange = { viewModel.updateSnoozeDurationMinutes(it.toInt()) },
+                                valueRange = 5f..60f,
+                                steps = 10
+                            )
+                        }
+                    }
+                }
+
+                // Max Snooze Count Card
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Maximum Snooze Count",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "$maxSnoozeCount times",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Slider(
+                                value = maxSnoozeCount.toFloat(),
+                                onValueChange = { viewModel.updateMaxSnoozeCount(it.toInt()) },
+                                valueRange = 1f..5f,
+                                steps = 3
+                            )
+                        }
+                    }
+                }
+            }
+
             // Notification Listener Permission Card (RCS & Messages)
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -444,8 +532,7 @@ fun SettingsScreen(
                                             val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
                                             context.startActivity(intent)
                                         } catch (_: Exception) {
-                                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                            context.startActivity(intent)
+                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                                         }
                                     }
                                 },
