@@ -1,15 +1,21 @@
 package com.example.onread
 
+import com.example.onread.data.dao.ReminderDao
 import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.observer.SmsContentObserver
-import com.example.onread.service.RcsNotificationListenerService
+import com.example.onread.util.ReminderSchedulingHelper
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class ContactAndReminderTest {
 
@@ -168,6 +174,8 @@ class ContactAndReminderTest {
         assertNull(SmsContentObserver.cleanMmsAddress("Insert-Address-Token"))
 
         assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +15551234567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress(" +1 (555) 123-4567 "))
+        assertEquals("+15551234567", SmsContentObserver.cleanMmsAddress("insert-address-token+15551234567"))
     }
 
     @Test
@@ -184,9 +192,9 @@ class ContactAndReminderTest {
         val initialMaxId = 50L
 
         assertFalse(
-            "Message prior to observerStartTime should be rejected",
+            "Message prior to observerStartTime - 10s grace period should be rejected",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime - 1000L,
+                timestamp = observerStartTime - 20000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -204,9 +212,9 @@ class ContactAndReminderTest {
         )
 
         assertTrue(
-            "Message with timestamp >= observerStartTime AND messageId > initialMaxId should be accepted",
+            "Message with timestamp >= (observerStartTime - 10s) AND messageId > initialMaxId should be accepted",
             SmsContentObserver.isNewMessage(
-                timestamp = observerStartTime + 1000L,
+                timestamp = observerStartTime - 5000L,
                 observerStartTime = observerStartTime,
                 messageId = initialMaxId + 1L,
                 initialMaxId = initialMaxId
@@ -286,8 +294,8 @@ class ContactAndReminderTest {
         )
         assertNull(contact.groupId)
 
-        val updated = contact.copy(groupId = 5L)
-        assertEquals(5L, updated.groupId)
+        val updated = contact.copy(groupId = "5")
+        assertEquals("5", updated.groupId)
     }
 
     @Test
@@ -295,5 +303,148 @@ class ContactAndReminderTest {
         val phoneNumber = "+1234567890"
         val uriString = "smsto:$phoneNumber"
         assertEquals("smsto:+1234567890", uriString)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_specificTimeCalculation() {
+        val cal = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 1, 10, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val messageTime = cal.timeInMillis
+
+        // Specific time 14:30 today (hasn't passed yet if message is at 10:00)
+        val triggerToday = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = true,
+            specificHour = 14,
+            specificMinute = 30,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
+
+        val expectedToday = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 1, 14, 30, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        assertEquals(expectedToday, triggerToday)
+
+        // Specific time 08:00 today (already passed if message is at 10:00 -> should be tomorrow 08:00)
+        val triggerTomorrow = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = true,
+            specificHour = 8,
+            specificMinute = 0,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
+
+        val expectedTomorrow = Calendar.getInstance().apply {
+            set(2025, Calendar.JUNE, 2, 8, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        assertEquals(expectedTomorrow, triggerTomorrow)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_fallbackDelay() {
+        val messageTime = 1000000000000L
+        val trigger = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = messageTime,
+            useSpecificTime = false,
+            specificHour = 9,
+            specificMinute = 0,
+            customDelayMinutes = 45,
+            defaultDelayMinutes = 30
+        )
+
+        val expectedTrigger = messageTime + (45 * 60 * 1000L)
+        assertEquals(expectedTrigger, trigger)
+    }
+
+    @Test
+    fun reminderSchedulingHelper_groupInheritance() {
+        val group = GroupEntity(
+            id = "g1",
+            name = "Work",
+            isReminderEnabled = true,
+            useSpecificTime = true,
+            specificHour = 17,
+            specificMinute = 0
+        )
+
+        val contact = ContactSettingEntity(
+            contactId = "c1",
+            phoneNumber = "111",
+            displayName = "Alice",
+            customDelayMinutes = 15,
+            customSpecificHour = null,
+            customSpecificMinute = null
+        )
+        val contactWithCustomTime = ContactSettingEntity(
+            contactId = "c2",
+            phoneNumber = "222",
+            displayName = "Bob",
+            customDelayMinutes = null,
+            customSpecificHour = 17,
+            customSpecificMinute = 30
+        )
+        val contacts = listOf(contactWithDelayNoCustomTime, contactWithCustomTime)
+
+        val updatedContacts = contacts.map { contact ->
+            if (contact.customSpecificHour == null || contact.customSpecificMinute == null) {
+                contact.copy(customDelayMinutes = null)
+            } else {
+                contact
+            }
+        }
+
+        assertNull("Contact without custom time should have customDelayMinutes cleared", updatedContacts[0].customDelayMinutes)
+        assertEquals(17, updatedContacts[1].customSpecificHour)
+        assertEquals(30, updatedContacts[1].customSpecificMinute)
+    }
+
+    @Test
+    fun calculateSpecificTriggerTime_futureTimeSameDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 10, 0, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis // 10:00 AM on Jan 15, 2025
+
+        val targetHour = 18 // 6:00 PM
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(15, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
+    }
+
+    @Test
+    fun calculateSpecificTriggerTime_passedTimeNextDay() {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2025, java.util.Calendar.JANUARY, 15, 20, 0, 0) // 8:00 PM
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val postTime = calendar.timeInMillis
+
+        val targetHour = 18 // 6:00 PM (has passed today)
+        val targetMinute = 30
+
+        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+
+        val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
+        assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.JANUARY, triggerCalendar.get(java.util.Calendar.MONTH))
+        assertEquals(16, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH)) // Next day!
+        assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
     }
 }

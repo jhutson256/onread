@@ -7,9 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Group
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,26 +15,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
+import com.example.onread.data.entity.GroupEntity
 import com.example.onread.ui.viewmodel.GroupsViewModel
+import java.util.Locale
+import kotlin.math.roundToInt
+import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsScreen(
     viewModel: GroupsViewModel = viewModel()
 ) {
     val groups by viewModel.groups.collectAsState()
-    val contacts by viewModel.contactSettings.collectAsState()
+    val contacts by viewModel.contacts.collectAsState()
+    val defaultDelayMinutes by viewModel.defaultDelayMinutes.collectAsState()
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingGroup by remember { mutableStateOf<ContactGroupEntity?>(null) }
-    var managingContactsGroup by remember { mutableStateOf<ContactGroupEntity?>(null) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var selectedGroupForEdit by remember { mutableStateOf<GroupEntity?>(null) }
+    var selectedGroupForMembers by remember { mutableStateOf<GroupEntity?>(null) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Group")
             }
         }
@@ -50,8 +51,8 @@ fun GroupsScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(top = 8.dp, bottom = 8.dp)
+                    .heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -82,7 +83,7 @@ fun GroupsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { showAddDialog = true }) {
+                        Button(onClick = { showCreateDialog = true }) {
                             Text("Create Group")
                         }
                     }
@@ -95,16 +96,14 @@ fun GroupsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(groups, key = { it.id }) { group ->
-                        val assignedCount = contacts.count { it.groupId == group.id }
+                        val memberCount = contacts.count { it.groupId == group.id }
                         GroupItemCard(
                             group = group,
-                            assignedCount = assignedCount,
-                            onEdit = { editingGroup = group },
-                            onDelete = { viewModel.deleteGroup(group) },
-                            onManageContacts = { managingContactsGroup = group },
-                            onToggleReminder = { enabled ->
-                                viewModel.updateGroup(group.copy(isReminderEnabled = enabled))
-                            }
+                            memberCount = memberCount,
+                            defaultDelayMinutes = defaultDelayMinutes,
+                            onClick = { selectedGroupForEdit = group },
+                            onManageMembers = { selectedGroupForMembers = group },
+                            onDelete = { viewModel.deleteGroup(group) }
                         )
                     }
                 }
@@ -112,35 +111,37 @@ fun GroupsScreen(
         }
     }
 
-    if (showAddDialog) {
+    if (showCreateDialog) {
         GroupEditDialog(
             group = null,
-            onDismiss = { showAddDialog = false },
-            onSave = { name, isReminderEnabled, delay ->
-                viewModel.addGroup(name, isReminderEnabled, delay)
-                showAddDialog = false
+            defaultDelayMinutes = defaultDelayMinutes,
+            onDismiss = { showCreateDialog = false },
+            onSave = { newGroup ->
+                viewModel.insertOrUpdateGroup(newGroup)
+                showCreateDialog = false
             }
         )
     }
 
-    editingGroup?.let { group ->
+    selectedGroupForEdit?.let { group ->
         GroupEditDialog(
             group = group,
-            onDismiss = { editingGroup = null },
-            onSave = { name, isReminderEnabled, delay ->
-                viewModel.updateGroup(group.copy(name = name, isReminderEnabled = isReminderEnabled, customDelayMinutes = delay))
-                editingGroup = null
+            defaultDelayMinutes = defaultDelayMinutes,
+            onDismiss = { selectedGroupForEdit = null },
+            onSave = { updated ->
+                viewModel.insertOrUpdateGroup(updated)
+                selectedGroupForEdit = null
             }
         )
     }
 
-    managingContactsGroup?.let { group ->
-        GroupContactsDialog(
+    selectedGroupForMembers?.let { group ->
+        GroupMembersDialog(
             group = group,
             contacts = contacts,
-            onDismiss = { managingContactsGroup = null },
-            onToggleContactAssignment = { contactId, isAssigned ->
-                viewModel.assignContactToGroup(contactId, if (isAssigned) group.id else null)
+            onDismiss = { selectedGroupForMembers = null },
+            onToggleContact = { contactId: String, inGroup: Boolean ->
+                viewModel.assignContactToGroup(contactId, if (inGroup) group.id else null)
             }
         )
     }
@@ -148,62 +149,62 @@ fun GroupsScreen(
 
 @Composable
 fun GroupItemCard(
-    group: ContactGroupEntity,
-    assignedCount: Int,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onManageContacts: () -> Unit,
-    onToggleReminder: (Boolean) -> Unit
+    group: GroupEntity,
+    memberCount: Int,
+    defaultDelayMinutes: Int,
+    onClick: () -> Unit,
+    onManageMembers: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = group.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "$assignedCount contacts assigned • Delay: ${group.customDelayMinutes}m",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = group.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "$memberCount contacts assigned",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val scheduleText = if (group.useSpecificTime) {
+                    val formattedTime = String.format(Locale.getDefault(), "%02d:%02d", group.specificHour, group.specificMinute)
+                    "Schedule: Specific Time ($formattedTime)"
+                } else {
+                    val delay = group.customDelayMinutes ?: defaultDelayMinutes
+                    val delayFormatted = when {
+                        delay < 60 -> "$delay minutes"
+                        delay % 60 == 0 -> "${delay / 60} hours"
+                        else -> "${delay / 60} hr ${delay % 60} min"
+                    }
+                    val delayType = if (group.customDelayMinutes != null) "Custom" else "Default"
+                    "Delay: $delayFormatted ($delayType)"
                 }
-
-                Switch(
-                    checked = group.isReminderEnabled,
-                    onCheckedChange = onToggleReminder
+                Text(
+                    text = scheduleText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onManageContacts) {
-                    Icon(Icons.Rounded.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Manage Contacts")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Rounded.Edit, contentDescription = "Edit Group")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = onManageMembers, modifier = Modifier.padding(end = 8.dp)) {
+                    Text("Members")
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Rounded.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error)
@@ -215,17 +216,22 @@ fun GroupItemCard(
 
 @Composable
 fun GroupEditDialog(
-    group: ContactGroupEntity?,
+    group: GroupEntity?,
+    defaultDelayMinutes: Int,
     onDismiss: () -> Unit,
-    onSave: (String, Boolean, Int) -> Unit
+    onSave: (GroupEntity) -> Unit
 ) {
     var name by remember { mutableStateOf(group?.name ?: "") }
-    var isReminderEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
-    var delayMinutes by remember { mutableStateOf((group?.customDelayMinutes ?: 30).toFloat()) }
+    var isEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
+    var useSpecificTime by remember { mutableStateOf(group?.useSpecificTime ?: false) }
+    var specificHour by remember { mutableIntStateOf(group?.specificHour ?: 9) }
+    var specificMinute by remember { mutableIntStateOf(group?.specificMinute ?: 0) }
+    var useCustomDelay by remember { mutableStateOf(group?.customDelayMinutes != null) }
+    var delayMinutes by remember { mutableFloatStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (group == null) "Create Contact Group" else "Edit Contact Group") },
+        title = { Text(if (group == null) "Create Group" else "Edit Group") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
@@ -243,25 +249,107 @@ fun GroupEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Reminders")
-                    Switch(checked = isReminderEnabled, onCheckedChange = { isReminderEnabled = it })
+                    Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text("Default Delay: ${delayMinutes.toInt()} minutes", style = MaterialTheme.typography.bodySmall)
-                Slider(
-                    value = delayMinutes,
-                    onValueChange = { delayMinutes = it },
-                    valueRange = 1f..120f,
-                    steps = 119
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Use Specific Clock Time")
+                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
+                }
+
+                if (useSpecificTime) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { specificHour = (specificHour + 1) % 24 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Hour: ${String.format("%02d", specificHour)}")
+                        }
+                        OutlinedButton(
+                            onClick = { specificMinute = (specificMinute + 15) % 60 },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Min: ${String.format("%02d", specificMinute)}")
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Custom Delay")
+                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+                    }
+
+                    if (useCustomDelay) {
+                        val delayOptions = remember {
+                            buildList {
+                                add(1)
+                                add(5)
+                                addAll((10..60 step 5).toList())
+                                addAll((90..720 step 30).toList())
+                                addAll((780..1440 step 60).toList())
+                            }
+                        }
+
+                        val currentIndex = delayOptions.indexOfFirst {
+                            it >= delayMinutes.toInt()
+                        }.coerceAtLeast(0)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Delay: ${
+                                when {
+                                    delayMinutes.toInt() < 60 -> "${delayMinutes.toInt()} minutes"
+                                    delayMinutes.toInt() % 60 == 0 -> "${delayMinutes.toInt() / 60} hours"
+                                    else -> "${delayMinutes.toInt() / 60} hr ${delayMinutes.toInt() % 60} min"
+                                }
+                            }",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+
+                        Slider(
+                            value = currentIndex.toFloat(),
+                            onValueChange = { value ->
+                                delayMinutes = delayOptions[value.roundToInt()].toFloat()
+                            },
+                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            steps = 0
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onSave(name.trim(), isReminderEnabled, delayMinutes.toInt())
+                        val groupId = group?.id ?: UUID.randomUUID().toString()
+                        onSave(
+                            GroupEntity(
+                                id = groupId,
+                                name = name.trim(),
+                                isReminderEnabled = isEnabled,
+                                customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null,
+                                useSpecificTime = useSpecificTime,
+                                specificHour = specificHour,
+                                specificMinute = specificMinute
+                            )
+                        )
                     }
                 },
                 enabled = name.isNotBlank()
@@ -278,60 +366,40 @@ fun GroupEditDialog(
 }
 
 @Composable
-fun GroupContactsDialog(
-    group: ContactGroupEntity,
+fun GroupMembersDialog(
+    group: GroupEntity,
     contacts: List<ContactSettingEntity>,
     onDismiss: () -> Unit,
-    onToggleContactAssignment: (String, Boolean) -> Unit
+    onToggleContact: (String, Boolean) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Manage Contacts for ${group.name}") },
+        title = { Text("Members of ${group.name}") },
         text = {
-            Box(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
+                    .height(300.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (contacts.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No contacts available")
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                items(contacts, key = { it.contactId }) { contact ->
+                    val isInGroup = contact.groupId == group.id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggleContact(contact.contactId, !isInGroup) }
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(contacts, key = { it.contactId }) { contact ->
-                            val isAssigned = contact.groupId == group.id
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onToggleContactAssignment(contact.contactId, !isAssigned) }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = contact.displayName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = contact.phoneNumber,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Checkbox(
-                                    checked = isAssigned,
-                                    onCheckedChange = { checked ->
-                                        onToggleContactAssignment(contact.contactId, checked)
-                                    }
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = contact.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text(text = contact.phoneNumber, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Checkbox(
+                            checked = isInGroup,
+                            onCheckedChange = { checked -> onToggleContact(contact.contactId, checked) }
+                        )
                     }
                 }
             }

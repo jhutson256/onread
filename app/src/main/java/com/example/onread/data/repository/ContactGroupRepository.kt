@@ -21,6 +21,14 @@ class ContactGroupRepository(
 
     suspend fun updateGroup(group: ContactGroupEntity) {
         contactGroupDao.updateGroup(group)
+        contactDao.updateContactsForGroup(
+            groupId = group.id.toString(),
+            isReminderEnabled = group.isReminderEnabled,
+            customDelayMinutes = group.customDelayMinutes,
+            useSpecificTime = false,
+            specificHour = 9,
+            specificMinute = 0
+        )
     }
 
     suspend fun deleteGroup(group: ContactGroupEntity) {

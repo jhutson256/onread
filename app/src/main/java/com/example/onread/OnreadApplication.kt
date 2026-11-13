@@ -6,14 +6,12 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.example.onread.data.database.AppDatabase
-import com.example.onread.observer.MmsRcsContentObserver
 import com.example.onread.observer.SmsContentObserver
 import com.example.onread.util.NotificationHelper
 
 class OnreadApplication : Application() {
 
     private lateinit var smsContentObserver: SmsContentObserver
-    private lateinit var mmsRcsContentObserver: MmsRcsContentObserver
 
     override fun onCreate() {
         super.onCreate()
@@ -28,16 +26,12 @@ class OnreadApplication : Application() {
             database
         )
 
-        mmsRcsContentObserver = MmsRcsContentObserver(
-            Handler(Looper.getMainLooper()),
-            this,
-            database
-        )
-
         // List of URIs to observe for SMS/MMS
         val urisToObserve = listOf(
             Uri.parse("content://sms"),
+            Uri.parse("content://sms/inbox"),
             Uri.parse("content://mms"),
+            Uri.parse("content://mms/inbox"),
             Uri.parse("content://mms-sms"),
             Uri.parse("content://mms-sms/conversations")
         )
@@ -50,7 +44,7 @@ class OnreadApplication : Application() {
                     true,
                     smsContentObserver
                 )
-                Log.d("OnreadApplication", "Registered ContentObserver for $uri")
+                Log.d("ONREAD_CONSISTENCY", "Registered ContentObserver for $uri")
             } catch (e: SecurityException) {
                 Log.w("OnreadApplication", "SecurityException registering ContentObserver for $uri", e)
             } catch (e: Exception) {
@@ -63,7 +57,6 @@ class OnreadApplication : Application() {
         super.onTerminate()
         try {
             contentResolver.unregisterContentObserver(smsContentObserver)
-            contentResolver.unregisterContentObserver(mmsRcsContentObserver)
         } catch (e: Exception) {
             e.printStackTrace()
         }
