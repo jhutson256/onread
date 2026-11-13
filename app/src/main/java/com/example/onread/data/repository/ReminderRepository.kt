@@ -5,16 +5,14 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.example.onread.data.dao.ReminderDao
 import com.example.onread.data.entity.ReminderEntity
+import com.example.onread.util.MessageDeduplicator
 import com.example.onread.util.NotificationHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.abs
 
 class ReminderRepository(private val reminderDao: ReminderDao) {
 
-    private val messageDeduplicationCache = ConcurrentHashMap<String, Long>()
     private val insertionMutex = Mutex()
 
     val allReminders: Flow<List<ReminderEntity>> = reminderDao.getAllReminders()
@@ -35,18 +33,14 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
         return reminderDao.getRemindersByStatus(status)
     }
 
-    suspend fun insertReminder(reminder: ReminderEntity): Long = insertionMutex.withLock {
-        val now = System.currentTimeMillis()
-        val refTime = maxOf(now, reminder.timestamp)
-
-        // Purge cache entries older than 60,000 ms (or 30,000 ms window relative to message timestamp)
-        messageDeduplicationCache.entries.removeIf { 
-            ((refTime - it.value) > 30_000L) || ((now - it.value) > 60_000L)
+    suspend fun insertReminder(reminder: ReminderEntity, skipDeduplication: Boolean = false): Long = insertionMutex.withLock {
+        val isDuplicate = if (!skipDeduplication) {
+            MessageDeduplicator.isDuplicateMessage(reminder.phoneNumber, reminder.messageBody, reminder.timestamp)
+        } else {
+            false
         }
 
         val phoneSuffix = reminder.phoneNumber.takeLast(10)
-        val key = "$phoneSuffix:${reminder.messageBody.trim().lowercase()}"
-
         val cutoffTime = reminder.timestamp - 30_000L
         val isDbDuplicate = reminderDao.hasRecentPendingReminder(
             phoneNumber = reminder.phoneNumber,
@@ -55,15 +49,14 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
             cutoffTime = cutoffTime,
         )
 
-        if (messageDeduplicationCache.containsKey(key) || isDbDuplicate) {
+        if (isDuplicate || isDbDuplicate) {
             try {
-                Log.d("ONREAD_DEDUP", "DROPPED DUPLICATE: $key")
+                Log.d("ONREAD_DEDUP", "DROPPED DUPLICATE: ${reminder.phoneNumber}")
             } catch (_: Throwable) {
             }
             return@withLock -1L
         }
 
-        messageDeduplicationCache[key] = refTime
         val id = reminderDao.insertReminder(reminder)
         try {
             Log.d("ONREAD_CONSISTENCY", "insertReminder succeeded: id=$id, phone=${reminder.phoneNumber}, name=${reminder.contactName}, threadId=${reminder.threadId}")
@@ -73,17 +66,11 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
     }
 
     suspend fun isDuplicateReminder(phoneNumber: String, messageBody: String, timestamp: Long): Boolean {
-        val cutoffTime = timestamp - 30_000L // 30 seconds window
-        val phoneSuffix = phoneNumber.takeLast(10)
-        val key = "$phoneSuffix:${messageBody.trim().lowercase()}"
-
-        if (messageDeduplicationCache.containsKey(key)) {
-            val cachedTime = messageDeduplicationCache[key]
-            if (cachedTime != null && abs(timestamp - cachedTime) <= 30_000L) {
-                return true
-            }
+        if (MessageDeduplicator.isDuplicateMessage(phoneNumber, messageBody, timestamp)) {
+            return true
         }
-
+        val cutoffTime = timestamp - 30_000L
+        val phoneSuffix = phoneNumber.takeLast(10)
         return reminderDao.hasRecentPendingReminder(
             phoneNumber = phoneNumber,
             phoneSuffix = phoneSuffix,
@@ -99,7 +86,7 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
         for (reminder in pendingReminders) {
             val existingDigits = reminder.phoneNumber.replace(Regex("[^0-9]"), "")
             val phoneMatches = (reminder.phoneNumber == phoneNumber) ||
-                (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() && 
+                (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() &&
                     ((existingDigits == inputDigits) ||
                      (inputDigits.length >= 10 && existingDigits.length >= 10 && inputDigits.takeLast(10) == existingDigits.takeLast(10))))
 
