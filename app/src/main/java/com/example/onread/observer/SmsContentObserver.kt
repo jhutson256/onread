@@ -63,21 +63,6 @@ class SmsContentObserver(
             }
         }
 
-        fun calculateSpecificTriggerTime(messageTimestamp: Long, targetHour: Int, targetMinute: Int): Long {
-            val baseTime = if (messageTimestamp > 0) messageTimestamp else System.currentTimeMillis()
-            val calendar = java.util.Calendar.getInstance().apply {
-                timeInMillis = baseTime
-                set(java.util.Calendar.HOUR_OF_DAY, targetHour)
-                set(java.util.Calendar.MINUTE, targetMinute)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-                if (timeInMillis <= baseTime) {
-                    add(java.util.Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-            return calendar.timeInMillis
-        }
-
         fun normalizeSmsTimestamp(rawDate: Long): Long {
             return when {
                 rawDate <= 0 -> System.currentTimeMillis()
@@ -336,6 +321,10 @@ class SmsContentObserver(
                         }
                     }
                 }
+                Log.d(TAG, "Initialized initialMaxSmsId=$initialMaxSmsId, lastProcessedSmsId=${lastProcessedSmsId.get()}, observerStartTime=$observerStartTime")
+                Log.d(RCS_LOG_TAG, "Initialized SMS/RCS observer: initialMaxSmsId=$initialMaxSmsId, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed SMS pointer", e)
             }
@@ -345,7 +334,7 @@ class SmsContentObserver(
                     Uri.parse("content://mms"),
                     arrayOf(Telephony.Mms._ID),
                     null, null,
-                    "_id DESC LIMIT 1"
+                    "_id DESC LIMIT 1",
                 )
                 mmsCursor?.use {
                     if (it.moveToFirst()) {
@@ -357,6 +346,10 @@ class SmsContentObserver(
                         }
                     }
                 }
+                Log.d(TAG, "Initialized initialMaxMmsId=$initialMaxMmsId, lastProcessedMmsId=${lastProcessedMmsId.get()}, observerStartTime=$observerStartTime")
+                Log.d(RCS_LOG_TAG, "Initialized MMS observer: initialMaxMmsId=$initialMaxMmsId, observerStartTime=$observerStartTime")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing last processed MMS pointer", e)
             }
@@ -365,12 +358,14 @@ class SmsContentObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         super.onChange(selfChange, uri)
+        Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
     }
 
     override fun onChange(selfChange: Boolean) {
         super.onChange(selfChange)
+        Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired (no URI), selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
     }
@@ -378,28 +373,37 @@ class SmsContentObserver(
     private fun pollLatestSms() {
         scope.launch {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d("ONREAD_CONSISTENCY", "READ_SMS permission not granted. Skipping pollLatestSms.")
                 return@launch
             }
             try {
                 if (lastProcessedSmsId.get() == -1L) {
-                    val smsCursor = context.contentResolver.query(
-                        Uri.parse("content://sms"),
-                        arrayOf(Telephony.Sms._ID),
-                        null, null,
-                        "_id DESC LIMIT 1"
-                    )
-                    smsCursor?.use {
-                        if (it.moveToFirst()) {
-                            val idIndex = it.getColumnIndex(Telephony.Sms._ID)
-                            if (idIndex != -1) {
-                                val maxId = it.getLong(idIndex)
-                                initialMaxSmsId = maxId
-                                lastProcessedSmsId.set(maxId)
+                    try {
+                        val smsCursor = context.contentResolver.query(
+                            Uri.parse("content://sms"),
+                            arrayOf(Telephony.Sms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        smsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxSmsId = maxId
+                                    lastProcessedSmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxSmsId = 0L
+                                lastProcessedSmsId.set(0L)
                             }
-                        } else {
-                            initialMaxSmsId = 0L
-                            lastProcessedSmsId.set(0L)
                         }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed SMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed SMS pointer", e)
+                        return@launch
                     }
                 }
 
@@ -420,16 +424,18 @@ class SmsContentObserver(
                 )
 
                 cursor?.use {
-                    if (it.count == 0) return@launch
+                    if (it.count == 0) {
+                        Log.d("ONREAD_CONSISTENCY", "No new SMS/RCS messages to process (lastProcessedSmsId=$currentLastId)")
+                        return@launch
+                    }
+
+                    Log.d("ONREAD_CONSISTENCY", "Polling content://sms: found ${it.count} new entries (lastProcessedSmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
-                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
-                    val specificHour = settingsRepository.specificTimeHourFlow.first()
-                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
@@ -448,37 +454,59 @@ class SmsContentObserver(
                         val type = if (typeIndex != -1) it.getInt(typeIndex) else 1
                         val threadId = if (threadIdIndex != -1) it.getLong(threadIdIndex) else null
 
-                        if (id <= currentLastId) continue
+                        if (id <= currentLastId) {
+                            Log.d("ONREAD_CONSISTENCY", "SMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
+                            continue
+                        }
+
                         lastProcessedSmsId.updateAndGet { current -> maxOf(current, id) }
 
                         val dateMs = normalizeSmsTimestamp(rawDate)
-                        if (!isNewMessage(dateMs, observerStartTime, id, initialMaxSmsId)) continue
+
+                        Log.d("ONREAD_CONSISTENCY", "Detected SMS/RCS message entry: id=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
+
+                        if (!isNewMessage(dateMs, observerStartTime, id, initialMaxSmsId)) {
+                            Log.d("ONREAD_CONSISTENCY", "Skipping historical SMS/RCS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
+                            continue
+                        }
 
                         val resolvedAddress = resolveAddress(context, rawAddress, threadId)
-                        if (resolvedAddress != null) {
-                            when (type) {
-                                Telephony.Sms.MESSAGE_TYPE_INBOX -> {
-                                    processIncomingMessage(
-                                        senderAddress = resolvedAddress,
-                                        body = body ?: "",
-                                        timestampMs = dateMs,
-                                        sourceTag = "RCS/SMS",
-                                        savedContactsOnly = savedContactsOnly,
-                                        defaultDelay = defaultDelay,
-                                        useSpecificTime = useSpecificTime,
-                                        specificHour = specificHour,
-                                        specificMinute = specificMinute,
-                                        defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                        mutableContactSettings = mutableContactSettings
-                                    )
-                                }
-                                Telephony.Sms.MESSAGE_TYPE_SENT -> {
-                                    processOutgoingMessage(resolvedAddress)
-                                }
+
+                        if (resolvedAddress.isNullOrEmpty()) {
+                            Log.d("ONREAD_CONSISTENCY", "SMS/RCS address could not be resolved for message $id. Skipping.")
+                            continue
+                        }
+
+                        Log.d("ONREAD_CONSISTENCY", "Resolved address for SMS message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
+
+                        when (type) {
+                            Telephony.Sms.MESSAGE_TYPE_INBOX -> {
+                                Log.d("ONREAD_CONSISTENCY", "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs, threadId: $threadId)")
+                                processIncomingMessage(
+                                    senderAddress = resolvedAddress,
+                                    body = body,
+                                    subject = null,
+                                    timestampMs = dateMs,
+                                    sourceTag = "RCS/SMS",
+                                    savedContactsOnly = savedContactsOnly,
+                                    defaultDelay = defaultDelay,
+                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                    mutableContactSettings = mutableContactSettings,
+                                    threadId = threadId ?: 0L
+                                )
+                            }
+                            Telephony.Sms.MESSAGE_TYPE_SENT -> {
+                                Log.d("ONREAD_CONSISTENCY", "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
+                                processOutgoingMessage(resolvedAddress)
+                            }
+                            else -> {
+                                Log.d("ONREAD_CONSISTENCY", "Unhandled SMS/RCS type $type for message $id")
                             }
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling SMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling SMS in ContentObserver", e)
             }
@@ -488,28 +516,37 @@ class SmsContentObserver(
     private fun pollLatestMms() {
         scope.launch {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                Log.d("ONREAD_CONSISTENCY", "READ_SMS permission not granted. Skipping pollLatestMms.")
                 return@launch
             }
             try {
                 if (lastProcessedMmsId.get() == -1L) {
-                    val mmsCursor = context.contentResolver.query(
-                        Uri.parse("content://mms"),
-                        arrayOf(Telephony.Mms._ID),
-                        null, null,
-                        "_id DESC LIMIT 1"
-                    )
-                    mmsCursor?.use {
-                        if (it.moveToFirst()) {
-                            val idIndex = it.getColumnIndex(Telephony.Mms._ID)
-                            if (idIndex != -1) {
-                                val maxId = it.getLong(idIndex)
-                                initialMaxMmsId = maxId
-                                lastProcessedMmsId.set(maxId)
+                    try {
+                        val mmsCursor = context.contentResolver.query(
+                            Uri.parse("content://mms"),
+                            arrayOf(Telephony.Mms._ID),
+                            null, null,
+                            "_id DESC LIMIT 1"
+                        )
+                        mmsCursor?.use {
+                            if (it.moveToFirst()) {
+                                val idIndex = it.getColumnIndex(Telephony.Mms._ID)
+                                if (idIndex != -1) {
+                                    val maxId = it.getLong(idIndex)
+                                    initialMaxMmsId = maxId
+                                    lastProcessedMmsId.set(maxId)
+                                }
+                            } else {
+                                initialMaxMmsId = 0L
+                                lastProcessedMmsId.set(0L)
                             }
-                        } else {
-                            initialMaxMmsId = 0L
-                            lastProcessedMmsId.set(0L)
                         }
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "SecurityException initializing last processed MMS pointer", e)
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing last processed MMS pointer", e)
+                        return@launch
                     }
                 }
 
@@ -530,16 +567,18 @@ class SmsContentObserver(
                 )
 
                 cursor?.use {
-                    if (it.count == 0) return@launch
+                    if (it.count == 0) {
+                        Log.d("ONREAD_CONSISTENCY", "No new MMS messages to process (lastProcessedMmsId=$currentLastId)")
+                        return@launch
+                    }
+
+                    Log.d("ONREAD_CONSISTENCY", "Polling content://mms: found ${it.count} new entries (lastProcessedMmsId=$currentLastId)")
 
                     val contactDao = database.contactDao()
                     val settingsRepository = SettingsRepository(context)
 
                     val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
                     val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
-                    val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
-                    val specificHour = settingsRepository.specificTimeHourFlow.first()
-                    val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
                     val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
                     val mutableContactSettings = contactDao.getAllContactSettings().first().toMutableList()
 
@@ -558,11 +597,21 @@ class SmsContentObserver(
                         val subject = if (subIndex != -1) it.getString(subIndex) else null
                         val threadId = if (threadIdIndex != -1) it.getLong(threadIdIndex) else null
 
-                        if (id <= currentLastId) continue
+                        if (id <= currentLastId) {
+                            Log.d("ONREAD_CONSISTENCY", "MMS Message ID $id already processed (currentLastId=$currentLastId). Skipping.")
+                            continue
+                        }
+
                         lastProcessedMmsId.updateAndGet { current -> maxOf(current, id) }
 
                         val dateMs = normalizeMmsTimestamp(rawDate)
-                        if (!isNewMessage(dateMs, observerStartTime, id, initialMaxMmsId)) continue
+
+                        Log.d("ONREAD_CONSISTENCY", "Detected MMS entry: id=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
+
+                        if (!isNewMessage(dateMs, observerStartTime, id, initialMaxMmsId)) {
+                            Log.d("ONREAD_CONSISTENCY", "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
+                            continue
+                        }
 
                         val isIncoming = isIncomingMms(msgBox, mType)
                         val isOutgoing = isOutgoingMms(msgBox, mType)
@@ -570,31 +619,49 @@ class SmsContentObserver(
                         if (isIncoming) {
                             val senders = getMmsAddresses(id, PDU_HEADER_FROM)
                             var rawSender = senders.firstOrNull()
+                            Log.d("ONREAD_CONSISTENCY", "MMS id=$id PDU_HEADER_FROM (type 137) rawSender='$rawSender'")
                             if (rawSender.isNullOrBlank() && threadId != null && threadId > 0) {
                                 rawSender = resolveAddress(context, null, threadId)
+                                Log.d("ONREAD_CONSISTENCY", "MMS id=$id fallback resolveAddress for threadId=$threadId: rawSender='$rawSender'")
                             }
-                            val resolvedSender = resolveAddress(context, rawSender, threadId)
-                            if (resolvedSender != null) {
-                                val body = extractMmsBody(id, subject)
-                                processIncomingMessage(
-                                    senderAddress = resolvedSender,
-                                    body = body,
-                                    timestampMs = dateMs,
-                                    sourceTag = "MMS",
-                                    savedContactsOnly = savedContactsOnly,
-                                    defaultDelay = defaultDelay,
-                                    useSpecificTime = useSpecificTime,
-                                    specificHour = specificHour,
-                                    specificMinute = specificMinute,
-                                    defaultContactReminderEnabled = defaultContactReminderEnabled,
-                                    mutableContactSettings = mutableContactSettings
-                                )
+                            val sender = cleanMmsAddress(rawSender) ?: resolveAddress(context, rawSender, threadId)
+                            if (sender == null) {
+                                Log.d("ONREAD_CONSISTENCY", "MMS sender address is null or empty for message $id. Skipping.")
+                                continue
                             }
+                            Log.d("ONREAD_CONSISTENCY", "Processing INCOMING MMS from sender $sender (id: $id, date: $dateMs, threadId: $threadId)")
+
+                            val body = extractMmsTextPart(id)
+
+                            processIncomingMessage(
+                                senderAddress = sender,
+                                body = body,
+                                subject = subject,
+                                timestampMs = dateMs,
+                                sourceTag = "MMS",
+                                savedContactsOnly = savedContactsOnly,
+                                defaultDelay = defaultDelay,
+                                defaultContactReminderEnabled = defaultContactReminderEnabled,
+                                mutableContactSettings = mutableContactSettings,
+                                threadId = threadId ?: 0L
+                            )
                         } else if (isOutgoing) {
-                            processOutgoingMessage(null)
+                            var recipients = getMmsAddresses(id, PDU_HEADER_TO)
+                            if (recipients.isEmpty() && threadId != null && threadId > 0) {
+                                recipients = getAddressesForThread(context, threadId)
+                            }
+                            val resolvedRecipients = recipients.mapNotNull { recipient -> resolveAddress(context, recipient, threadId) }.distinct()
+                            Log.d("ONREAD_CONSISTENCY", "Processing OUTGOING MMS (id: $id) to recipients: $resolvedRecipients")
+                            for (recipient in resolvedRecipients) {
+                                processOutgoingMessage(recipient)
+                            }
+                        } else {
+                            Log.d("ONREAD_CONSISTENCY", "Unhandled MMS msg_box $msgBox, m_type $mType for message $id")
                         }
                     }
                 }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "SecurityException polling MMS in ContentObserver", e)
             } catch (e: Exception) {
                 Log.e(TAG, "Error polling MMS in ContentObserver", e)
             }
@@ -603,54 +670,257 @@ class SmsContentObserver(
 
     private suspend fun processIncomingMessage(
         senderAddress: String,
-        body: String,
+        body: String?,
+        subject: String? = null,
         timestampMs: Long,
         sourceTag: String,
         savedContactsOnly: Boolean,
         defaultDelay: Int,
-        useSpecificTime: Boolean,
-        specificHour: Int,
-        specificMinute: Int,
         defaultContactReminderEnabled: Boolean,
-        mutableContactSettings: MutableList<ContactSettingEntity>
+        mutableContactSettings: MutableList<ContactSettingEntity>,
+        threadId: Long = 0L
     ) {
-        // Implement your incoming message handling logic here
+        if (MessageDeduplicator.isDuplicateMessage(senderAddress, body, subject, timestampMs)) {
+            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (MessageDeduplicator)")
+            return
+        }
+
+        val reminderDao = database.reminderDao()
+        val contactDao = database.contactDao()
+        val groupDao = database.groupDao()
+
+        val isSaved = ContactSyncHelper.isContactSaved(context, senderAddress)
+        if (!shouldProcessSms(savedContactsOnly, isSaved)) {
+            Log.d("ONREAD_CONSISTENCY", "Skipping incoming $sourceTag from $senderAddress: savedContactsOnly is true and contact is not saved in contacts.")
+            return
+        }
+
+        val normalizedAddress = senderAddress.replace(Regex("[^0-9+]"), "")
+        val inputDigits = senderAddress.replace(Regex("[^0-9]"), "")
+
+        var contactSetting = mutableContactSettings.find { setting ->
+            val settingDigits = setting.phoneNumber.replace(Regex("[^0-9]"), "")
+            (settingDigits == inputDigits) ||
+                (inputDigits.length >= 10 && settingDigits.length >= 10 && inputDigits.takeLast(10) == settingDigits.takeLast(10)) ||
+                (inputDigits.isNotEmpty() && settingDigits.isNotEmpty() && (inputDigits.endsWith(settingDigits) || settingDigits.endsWith(inputDigits)))
+        }
+
+        if (contactSetting == null) {
+            val contactId = "${sourceTag.lowercase().replace('/', '_')}_${System.currentTimeMillis()}_${normalizedAddress.takeLast(6)}"
+            val displayName = getContactName(context, senderAddress)
+            contactSetting = ContactSettingEntity(
+                contactId = contactId,
+                phoneNumber = normalizedAddress.ifEmpty { senderAddress },
+                displayName = displayName,
+                isReminderEnabled = defaultContactReminderEnabled,
+                customDelayMinutes = null,
+                isSavedContact = isSaved
+            )
+            contactDao.insertContactSetting(contactSetting)
+            mutableContactSettings.add(contactSetting)
+            Log.d("ONREAD_CONSISTENCY", "Auto-inserted default ContactSettingEntity for sender $senderAddress ($displayName, isSavedContact=$isSaved)")
+        }
+
+        val groups = groupDao.getAllGroups().first()
+        val group = groups.find { it.id == contactSetting.groupId }
+
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contactSetting,
+            group = group,
+            defaultDelayMinutes = defaultDelay,
+            timestampMs = timestampMs
+        )
+
+        if (!resolved.isReminderEnabled) {
+            Log.d("ONREAD_CONSISTENCY", "Skipping incoming $sourceTag from $senderAddress: reminders disabled for contact ${contactSetting.displayName} or group")
+            return
+        }
+
+        val triggerTime = resolved.triggerTime
+        val messageText = determineMmsBody(body, subject)
+
+        val reminder = ReminderEntity(
+            phoneNumber = senderAddress,
+            contactName = contactSetting.displayName,
+            messageBody = messageText,
+            timestamp = timestampMs,
+            triggerTime = triggerTime,
+            status = "PENDING",
+            threadId = threadId
+        )
+        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderId = reminderRepository.insertReminder(reminder, skipDeduplication = true)
+        if (reminderId <= 0L) {
+            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window in DB)")
+            return
+        }
+        Log.d("ONREAD_CONSISTENCY", "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime, threadId: $threadId")
+
+        scheduleReminderAlarm(context, reminderId, triggerTime)
     }
 
-    private fun processOutgoingMessage(address: String?) {
-        // Implement your outgoing message handling logic here
+    private suspend fun processOutgoingMessage(recipientAddress: String) {
+        val reminderRepository = ReminderRepository(database.reminderDao())
+        reminderRepository.dismissPendingRemindersForNumber(context, recipientAddress)
+        Log.d("ONREAD_CONSISTENCY", "Dismissed pending reminders and cancelled alarms for recipient: $recipientAddress")
     }
 
-    private fun getMmsAddresses(mmsId: Long, type: Int): List<String> {
+    private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
         val addresses = mutableListOf<String>()
-        val uri = Uri.parse("content://mms/$mmsId/addr")
-        context.contentResolver.query(uri, arrayOf("address", "type"), "type = ?", arrayOf(type.toString()), null)?.use { cursor ->
-            val addrIndex = cursor.getColumnIndex("address")
-            while (cursor.moveToNext()) {
-                if (addrIndex != -1) {
-                    cursor.getString(addrIndex)?.let { addresses.add(it) }
+        try {
+            val addrUri = Uri.parse("content://mms/$mmsId/addr")
+            val cursor = context.contentResolver.query(
+                addrUri,
+                arrayOf("address", "type"),
+                null, null, null
+            )
+            cursor?.use {
+                val addressIndex = it.getColumnIndex("address")
+                val typeIndex = it.getColumnIndex("type")
+                while (it.moveToNext()) {
+                    val type = if (typeIndex != -1) it.getInt(typeIndex) else -1
+                    if (type == targetType && addressIndex != -1) {
+                        val rawAddr = it.getString(addressIndex)
+                        Log.d("ONREAD_CONSISTENCY", "Query content://mms/$mmsId/addr for type $targetType: rawAddr='$rawAddr'")
+                        cleanMmsAddress(rawAddr)?.let { cleaned ->
+                            addresses.add(cleaned)
+                            Log.d("ONREAD_CONSISTENCY", "Resolved/Cleaned MMS address for type $targetType: '$cleaned'")
+                        }
+                    }
                 }
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching MMS addresses for mmsId=$mmsId, targetType=$targetType", e)
         }
         return addresses
     }
 
-    private fun extractMmsBody(mmsId: Long, subject: String?): String {
-        val partUri = Uri.parse("content://mms/part")
-        val sb = StringBuilder()
-        context.contentResolver.query(partUri, arrayOf("_id", "mid", "ct", "text"), "mid = ?", arrayOf(mmsId.toString()), null)?.use { cursor ->
-            val ctIndex = cursor.getColumnIndex("ct")
-            val textIndex = cursor.getColumnIndex("text")
-            while (cursor.moveToNext()) {
-                val ct = if (ctIndex != -1) cursor.getString(ctIndex) else null
-                if ("text/plain" == ct) {
-                    val text = if (textIndex != -1) cursor.getString(textIndex) else null
-                    if (!text.isNullOrEmpty()) {
-                        sb.append(text)
+    private fun extractMmsTextPart(mmsId: Long): String? {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+        var extractedText: String? = null
+        try {
+            val partUri = Uri.parse("content://mms/$mmsId/part")
+            var cursor = context.contentResolver.query(
+                partUri,
+                arrayOf("_id", "ct", "text"),
+                null, null, null
+            )
+
+            if (cursor == null || cursor.count == 0) {
+                cursor?.close()
+                cursor = context.contentResolver.query(
+                    Uri.parse("content://mms/part"),
+                    arrayOf("_id", "ct", "text"),
+                    "mid = ?",
+                    arrayOf(mmsId.toString()),
+                    null
+                )
+            }
+
+            cursor?.use {
+                val idIndex = it.getColumnIndex("_id")
+                val ctIndex = it.getColumnIndex("ct")
+                val textIndex = it.getColumnIndex("text")
+
+                val textParts = mutableListOf<String>()
+
+                while (it.moveToNext()) {
+                    val ct = if (ctIndex != -1) it.getString(ctIndex) else null
+                    if (ct != null && ct.contains("text", ignoreCase = true)) {
+                        val text = if (textIndex != -1) it.getString(textIndex) else null
+                        if (!text.isNullOrBlank()) {
+                            textParts.add(text)
+                        } else if (idIndex != -1) {
+                            val partId = it.getLong(idIndex)
+                            val partDataUri = Uri.parse("content://mms/part/$partId")
+                            try {
+                                val streamText = context.contentResolver.openInputStream(partDataUri)?.use { stream ->
+                                    stream.bufferedReader().use { reader -> reader.readText() }
+                                }
+                                if (!streamText.isNullOrBlank()) {
+                                    textParts.add(streamText)
+                                }
+                            } catch (e: SecurityException) {
+                                Log.w(TAG, "SecurityException reading text part stream for part $partId", e)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to read text part stream for part $partId", e)
+                            }
+                        }
+                    }
+                }
+                if (textParts.isNotEmpty()) {
+                    extractedText = textParts.joinToString("\n")
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException extracting MMS body for message $mmsId", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting MMS body for message $mmsId", e)
+        }
+
+        return extractedText?.trim()?.ifEmpty { null }
+    }
+
+    private fun getContactName(context: Context, phoneNumber: String): String {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return phoneNumber
+        }
+        return try {
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+            context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (nameIndex != -1) {
+                        return cursor.getString(nameIndex) ?: phoneNumber
                     }
                 }
             }
+            phoneNumber
+        } catch (_: SecurityException) {
+            phoneNumber
+        } catch (_: Exception) {
+            phoneNumber
         }
-        return determineMmsBody(sb.toString(), subject)
+    }
+
+    private fun scheduleReminderAlarm(context: Context, reminderId: Long, triggerTime: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
+            putExtra("EXTRA_REMINDER_ID", reminderId)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            reminderId.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerTime,
+                pendingIntent
+            )
+            Log.d(TAG, "Scheduled exact alarm for reminder ID $reminderId at $triggerTime")
+            Log.d(RCS_LOG_TAG, "Scheduled alarm for reminder ID $reminderId at triggerTime $triggerTime")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "SecurityException setting exact alarm, falling back to standard alarm", e)
+            try {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            } catch (ex: Exception) {
+                Log.e(TAG, "Failed to schedule alarm for reminder ID $reminderId", ex)
+            }
+        }
     }
 }

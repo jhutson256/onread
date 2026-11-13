@@ -33,18 +33,32 @@ object MessageDeduplicator {
     private val cache = LruCache<String, Long>(CACHE_CAPACITY)
 
     @Synchronized
-    fun generateMessageFingerprint(sender: String, body: String, timestamp: Long): String {
-        val roundedTime = (timestamp / 30_000L) * 30_000L
-        val digits = sender.filter { it.isDigit() }
-        val normalizedSender = when {
-            digits.length >= 10 -> digits.takeLast(10)
-            digits.isNotEmpty() -> digits
-            else -> sender.trim().lowercase()
+    fun generateMessageFingerprint(sender: String?, body: String?, timestamp: Long): String {
+        return generateMessageFingerprint(sender, body, null, timestamp)
+    }
+
+    @Synchronized
+    fun generateMessageFingerprint(sender: String?, body: String?, subject: String?, timestamp: Long): String {
+        val bucketMs = 30_000L
+        val roundedTime = timestamp / bucketMs * bucketMs
+        val safeSender = if (!sender.isNullOrBlank()) {
+            val digits = sender.filter { it.isDigit() }
+            when {
+                digits.length >= 10 -> digits.takeLast(10)
+                digits.isNotEmpty() -> digits
+                else -> sender.trim().lowercase()
+            }
+        } else {
+            "unknown_sender"
         }
-        val normalizedBody = body.trim().lowercase()
-        val rawInput = "$normalizedSender|$normalizedBody|$roundedTime"
-        val digest = MessageDigest.getInstance("SHA-256").digest(rawInput.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }
+        val safeContent = if (!body.isNullOrBlank()) {
+            body.trim().lowercase()
+        } else {
+            if (!subject.isNullOrBlank()) subject.trim().lowercase() else "mms_attachment"
+        }
+        val rawString = "$safeSender|$safeContent|$roundedTime"
+        val bytes = MessageDigest.getInstance("SHA-256").digest(rawString.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 
     @Synchronized
@@ -61,8 +75,13 @@ object MessageDeduplicator {
     }
 
     @Synchronized
-    fun isDuplicateMessage(sender: String, body: String, timestamp: Long): Boolean {
-        val fingerprint = generateMessageFingerprint(sender, body, timestamp)
+    fun isDuplicateMessage(sender: String?, body: String?, timestamp: Long): Boolean {
+        return isDuplicateMessage(sender, body, null, timestamp)
+    }
+
+    @Synchronized
+    fun isDuplicateMessage(sender: String?, body: String?, subject: String?, timestamp: Long): Boolean {
+        val fingerprint = generateMessageFingerprint(sender, body, subject, timestamp)
         return isDuplicate(fingerprint)
     }
 

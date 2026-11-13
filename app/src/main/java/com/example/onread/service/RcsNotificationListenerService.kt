@@ -59,9 +59,15 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         val (rawTitle, text) = extractTitleAndText(notification)
+        val subject = notification.extras?.let {
+            it.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+                ?: it.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString()
+                ?: it.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()
+                ?: it.getCharSequence("android.subject")?.toString()
+        }?.trim()
 
-        if (rawTitle.isNullOrBlank() || text.isNullOrBlank()) {
-            Log.d(TAG, "Skipping notification from $packageName: title or text is null/blank")
+        if (rawTitle.isNullOrBlank() || (text.isNullOrBlank() && subject.isNullOrBlank())) {
+            Log.d(TAG, "Skipping notification from $packageName: title or text/subject is null/blank")
             return
         }
 
@@ -69,7 +75,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         serviceScope.launch {
             try {
-                processRcsNotification(rawTitle, text, postTime)
+                processRcsNotification(rawTitle, text, subject, postTime)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing RCS notification from $packageName", e)
             }
@@ -78,10 +84,11 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
     private suspend fun processRcsNotification(
         rawTitle: String,
-        messageText: String,
+        messageText: String?,
+        subject: String?,
         postTime: Long
     ) {
-        if (MessageDeduplicator.isDuplicateMessage(rawTitle, messageText, postTime)) {
+        if (MessageDeduplicator.isDuplicateMessage(rawTitle, messageText, subject, postTime)) {
             Log.d(TAG, "Skipping duplicate RCS notification for '$rawTitle'")
             return
         }
@@ -94,9 +101,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
         val defaultDelay = settingsRepository.defaultDelayMinutesFlow.first()
-        val useSpecificTime = settingsRepository.useSpecificTimeFlow.first()
-        val specificHour = settingsRepository.specificTimeHourFlow.first()
-        val specificMinute = settingsRepository.specificTimeMinuteFlow.first()
         val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
 
         val allContacts = contactDao.getAllContactSettings().first()
@@ -114,7 +118,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        if (MessageDeduplicator.isDuplicateMessage(contactSetting.phoneNumber, messageText, postTime)) {
+        if (MessageDeduplicator.isDuplicateMessage(contactSetting.phoneNumber, messageText, subject, postTime)) {
             Log.d(TAG, "Skipping duplicate RCS notification for resolved phone '${contactSetting.phoneNumber}'")
             return
         }
@@ -140,20 +144,19 @@ class RcsNotificationListenerService : NotificationListenerService() {
             Log.d(TAG, "Inserted new ContactSettingEntity for '${contactSetting.displayName}' (${contactSetting.phoneNumber})")
         }
 
-        val triggerTime = if (useSpecificTime) {
-            // Updated to match your entity properties (specificHour/specificMinute)
-            val targetHour = contactSetting.specificHour ?: specificHour
-            val targetMinute = contactSetting.specificMinute ?: specificMinute
-            calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        val triggerTime = resolved.triggerTime
+        val finalMessageText = if (!messageText.isNullOrBlank()) {
+            messageText
+        } else if (!subject.isNullOrBlank()) {
+            subject
         } else {
-            val delayMinutes = contactSetting.customDelayMinutes ?: defaultDelay
-            calculateTriggerTime(postTime, delayMinutes)
+            "[RCS message]"
         }
 
         val reminder = ReminderEntity(
             phoneNumber = contactSetting.phoneNumber,
             contactName = contactSetting.displayName,
-            messageBody = messageText,
+            messageBody = finalMessageText,
             timestamp = postTime,
             triggerTime = triggerTime,
             status = "PENDING"
@@ -245,21 +248,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
         fun calculateTriggerTime(postTime: Long, delayMinutes: Int): Long {
             val baseTime = if (postTime > 0) postTime else System.currentTimeMillis()
             return baseTime + (delayMinutes * 60 * 1000L)
-        }
-
-        fun calculateSpecificTriggerTime(postTime: Long, targetHour: Int, targetMinute: Int): Long {
-            val baseTime = if (postTime > 0) postTime else System.currentTimeMillis()
-            val calendar = java.util.Calendar.getInstance().apply {
-                timeInMillis = baseTime
-                set(java.util.Calendar.HOUR_OF_DAY, targetHour)
-                set(java.util.Calendar.MINUTE, targetMinute)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-                if (timeInMillis <= baseTime) {
-                    add(java.util.Calendar.DAY_OF_YEAR, 1)
-                }
-            }
-            return calendar.timeInMillis
         }
 
         fun resolveContactSetting(
@@ -376,7 +364,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         private fun scheduleReminderAlarm(context: Context, reminderId: Long, triggerTime: Long) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, ReminderAlarmReceiver::class.java).apply {
                 putExtra("EXTRA_REMINDER_ID", reminderId)
             }

@@ -139,4 +139,31 @@ class MessageDeduplicatorTest {
         assertEquals("Only 1 concurrent call should return false (allowed)", 1, allowedCount)
         assertEquals("19 concurrent calls should return true (blocked)", 19, blockedCount)
     }
+
+    @Test
+    fun generateMessageFingerprint_mmsSubjectFallback() {
+        val t = 1700000010000L
+        val fp1 = MessageDeduplicator.generateMessageFingerprint("+15551234567", null, "Photo from vacation", t)
+        val fp2 = MessageDeduplicator.generateMessageFingerprint("+15551234567", "", "  photo from vacation  ", t)
+        val fp3 = MessageDeduplicator.generateMessageFingerprint("+15551234567", null, null, t)
+
+        assertEquals("Null body with subject must use subject", fp1, fp2)
+        assertNotEquals("Null body with and without subject must differ", fp1, fp3)
+    }
+
+    @Test
+    fun isDuplicateMessage_withSubject() {
+        val sender = "+15551234567"
+        val timestamp = 1700000010000L
+
+        assertFalse(
+            "First ingestion of MMS with null body and subject must not be flagged as duplicate",
+            MessageDeduplicator.isDuplicateMessage(sender, null, "Family Reunion", timestamp)
+        )
+
+        assertTrue(
+            "Second ingestion of MMS with null body and identical subject within 30s bucket must be flagged as duplicate",
+            MessageDeduplicator.isDuplicateMessage(sender, "", "  family reunion  ", timestamp + 5000L)
+        )
+    }
 }
