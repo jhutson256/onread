@@ -3,13 +3,11 @@ package com.example.onread.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.example.onread.data.database.AppDatabase
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.util.NotificationHelper
-import com.example.onread.util.NotificationHelper.ACTION_SNOOZE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -19,11 +17,12 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "ReminderAlarmReceiver"
+        const val ACTION_SNOOZE = "com.example.onread.ACTION_SNOOZE"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         val reminderId = intent.getLongExtra("EXTRA_REMINDER_ID", -1L)
-        Log.d(TAG, "onReceive triggered with reminderId: $reminderId")
+        Log.d(TAG, "onReceive triggered with reminderId: $reminderId, action: ${intent.action}")
         if (reminderId == -1L) {
             Log.d(TAG, "Invalid reminderId received (-1L)")
             return
@@ -34,15 +33,16 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
             try {
                 val database = AppDatabase.getDatabase(context)
                 val reminderDao = database.reminderDao()
+                val settingsRepository = SettingsRepository(context)
+
+                val snoozeEnabled = settingsRepository.snoozeEnabledFlow.first()
+                val snoozeDurationMinutes = settingsRepository.snoozeDurationMinutesFlow.first()
+                val maxSnoozeCount = settingsRepository.maxSnoozeCountFlow.first()
+
                 val reminder = reminderDao.getReminderById(reminderId).first()
                 Log.d(TAG, "Database operation: Fetched reminder for ID $reminderId: $reminder")
 
                 if (reminder != null && reminder.status == "PENDING") {
-                    val settingsRepository = SettingsRepository(context)
-                    val snoozeEnabled = settingsRepository.snoozeEnabledFlow.first()
-                    val snoozeDurationMinutes = settingsRepository.snoozeDurationMinutesFlow.first()
-                    val maxSnoozeCount = settingsRepository.maxSnoozeCountFlow.first()
-
                     if (intent.action == ACTION_SNOOZE) {
                         if (snoozeEnabled && reminder.snoozeCount < maxSnoozeCount) {
                             val newSnoozeCount = reminder.snoozeCount + 1
@@ -53,27 +53,9 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                                 snoozeCount = newSnoozeCount
                             )
                             reminderDao.updateReminder(updatedReminder)
+                            NotificationHelper.scheduleReminderAlarm(context, reminderId, newTriggerTime)
 
-                            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
-                            val alarmIntent = Intent(context, ReminderAlarmReceiver::class.java).apply {
-                                putExtra("EXTRA_REMINDER_ID", reminderId)
-                            }
-                            val pendingIntent = android.app.PendingIntent.getBroadcast(
-                                context,
-                                reminderId.toInt(),
-                                alarmIntent,
-                                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-                            )
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                if (alarmManager?.canScheduleExactAlarms() == true) {
-                                    alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, newTriggerTime, pendingIntent)
-                                } else {
-                                    alarmManager?.set(android.app.AlarmManager.RTC_WAKEUP, newTriggerTime, pendingIntent)
-                                }
-                            } else {
-                                alarmManager?.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, newTriggerTime, pendingIntent)
-                            }
-
+                            // Cancel current notification
                             try {
                                 NotificationManagerCompat.from(context).cancel(reminderId.toInt())
                             } catch (e: Exception) {
@@ -90,7 +72,6 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                             reminder.id,
                             reminder.contactName,
                             reminder.messageBody,
-                            reminder.phoneNumber,
                             snoozeEnabled,
                             snoozeDurationMinutes,
                             maxSnoozeCount,
@@ -104,7 +85,7 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                     Log.d(TAG, "Reminder not found or status is not PENDING (status: ${reminder?.status})")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing alarm for reminder ID $reminderId", e)
+                Log.e(TAG, "Error processing alarm/snooze for reminder ID $reminderId", e)
                 e.printStackTrace()
             } finally {
                 pendingResult.finish()
