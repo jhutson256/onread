@@ -3,6 +3,8 @@ package com.example.onread.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.onread.data.database.AppDatabase
+import com.example.onread.data.repository.ContactRepository
 import com.example.onread.data.repository.SettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -11,6 +13,7 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
+    private val contactRepository = ContactRepository(AppDatabase.getDatabase(application).contactDao())
 
     val colorTheme: StateFlow<String> = settingsRepository.colorThemeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "SYSTEM")
@@ -51,6 +54,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun updateUseSpecificTime(useSpecific: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateUseSpecificTime(useSpecific)
+            if (useSpecific) {
+                contactRepository.clearCustomDelaysForClockMode()
+            }
         }
     }
 
