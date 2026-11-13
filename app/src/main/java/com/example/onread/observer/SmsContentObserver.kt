@@ -20,6 +20,7 @@ import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
+import com.example.onread.util.MessageDeduplicator
 import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -676,6 +677,11 @@ class SmsContentObserver(
         mutableContactSettings: MutableList<ContactSettingEntity>,
         threadId: Long = 0L
     ) {
+        if (MessageDeduplicator.isDuplicateMessage(senderAddress, body, timestampMs)) {
+            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (MessageDeduplicator)")
+            return
+        }
+
         val reminderDao = database.reminderDao()
         val contactDao = database.contactDao()
         val groupDao = database.groupDao()
@@ -740,9 +746,9 @@ class SmsContentObserver(
             threadId = threadId
         )
         val reminderRepository = ReminderRepository(reminderDao)
-        val reminderId = reminderRepository.insertReminder(reminder)
+        val reminderId = reminderRepository.insertReminder(reminder, skipDeduplication = true)
         if (reminderId <= 0L) {
-            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window)")
+            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window in DB)")
             return
         }
         Log.d("ONREAD_CONSISTENCY", "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime, threadId: $threadId")
