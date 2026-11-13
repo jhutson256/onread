@@ -26,6 +26,10 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import java.util.Locale
 import kotlin.math.roundToInt
+import android.app.TimePickerDialog
+import androidx.compose.ui.platform.LocalContext
+import android.view.ContextThemeWrapper
+import com.example.onread.R
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -301,6 +305,7 @@ fun ContactSettingDialog(
     onDismiss: () -> Unit,
     onSave: (ContactSettingEntity) -> Unit
 ) {
+    val context = LocalContext.current
     var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
     var selectedGroupId by remember { mutableStateOf(contact.groupId) }
     var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
@@ -387,27 +392,61 @@ fun ContactSettingDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = { specificHour = (specificHour + 1) % 24 },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Hour: ${String.format(Locale.getDefault(), "%02d", specificHour)}")
+                        Column {
+                            Text(
+                                text = "Trigger Time",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            val displayHour =
+                                if (specificHour == 0) 12
+                                else if (specificHour > 12) specificHour - 12
+                                else specificHour
+
+                            val amPm = if (specificHour >= 12) "PM" else "AM"
+
+                            val formattedTime = String.format(
+                                Locale.getDefault(),
+                                "%d:%02d %s",
+                                displayHour,
+                                specificMinute,
+                                amPm
+                            )
+
+                            Text(
+                                text = formattedTime,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        OutlinedButton(
-                            onClick = { specificMinute = (specificMinute + 15) % 60 },
-                            modifier = Modifier.weight(1f)
+
+                        Button(
+                            onClick = {
+                                TimePickerDialog(
+                                    ContextThemeWrapper(
+                                        context,
+                                        R.style.Theme_Onread_TimePickerDialog
+                                    ),
+                                    { _, hourOfDay, minute ->
+                                        specificHour = hourOfDay
+                                        specificMinute = minute
+                                    },
+                                    specificHour,
+                                    specificMinute,
+                                    false
+                                ).show()
+                            }
                         ) {
-                            Text("Min: ${String.format(Locale.getDefault(), "%02d", specificMinute)}")
+                            Text("Change Time")
                         }
                     }
                 } else {

@@ -380,30 +380,32 @@ class ContactAndReminderTest {
             phoneNumber = "111",
             displayName = "Alice",
             customDelayMinutes = 15,
-            customSpecificHour = null,
-            customSpecificMinute = null
+            useSpecificTime = false,
+            specificHour = 9,
+            specificMinute = 0
         )
         val contactWithCustomTime = ContactSettingEntity(
             contactId = "c2",
             phoneNumber = "222",
             displayName = "Bob",
             customDelayMinutes = null,
-            customSpecificHour = 17,
-            customSpecificMinute = 30
+            useSpecificTime = true,
+            specificHour = 17,
+            specificMinute = 30
         )
-        val contacts = listOf(contactWithDelayNoCustomTime, contactWithCustomTime)
+        val contacts = listOf(contact, contactWithCustomTime)
 
-        val updatedContacts = contacts.map { contact ->
-            if (contact.customSpecificHour == null || contact.customSpecificMinute == null) {
-                contact.copy(customDelayMinutes = null)
+        val updatedContacts = contacts.map { item ->
+            if (!item.useSpecificTime) {
+                item.copy(customDelayMinutes = null)
             } else {
-                contact
+                item
             }
         }
 
         assertNull("Contact without custom time should have customDelayMinutes cleared", updatedContacts[0].customDelayMinutes)
-        assertEquals(17, updatedContacts[1].customSpecificHour)
-        assertEquals(30, updatedContacts[1].customSpecificMinute)
+        assertEquals(17, updatedContacts[1].specificHour)
+        assertEquals(30, updatedContacts[1].specificMinute)
     }
 
     @Test

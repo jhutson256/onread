@@ -21,6 +21,8 @@ import com.example.onread.ui.viewmodel.GroupsViewModel
 import java.util.Locale
 import kotlin.math.roundToInt
 import java.util.UUID
+import android.app.TimePickerDialog
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun GroupsScreen(
@@ -221,6 +223,7 @@ fun GroupEditDialog(
     onDismiss: () -> Unit,
     onSave: (GroupEntity) -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(group?.name ?: "") }
     var isEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
     var useSpecificTime by remember { mutableStateOf(group?.useSpecificTime ?: false) }
@@ -265,23 +268,58 @@ fun GroupEditDialog(
 
                 if (useSpecificTime) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Trigger Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}", style = MaterialTheme.typography.bodySmall)
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = { specificHour = (specificHour + 1) % 24 },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Hour: ${String.format("%02d", specificHour)}")
+                        Column {
+                            Text(
+                                text = "Trigger Time",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            val displayHour =
+                                if (specificHour == 0) 12
+                                else if (specificHour > 12) specificHour - 12
+                                else specificHour
+
+                            val amPm = if (specificHour >= 12) "PM" else "AM"
+
+                            val formattedTime = String.format(
+                                Locale.getDefault(),
+                                "%d:%02d %s",
+                                displayHour,
+                                specificMinute,
+                                amPm
+                            )
+
+                            Text(
+                                text = formattedTime,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        OutlinedButton(
-                            onClick = { specificMinute = (specificMinute + 15) % 60 },
-                            modifier = Modifier.weight(1f)
+
+                        Button(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, hourOfDay, minute ->
+                                        specificHour = hourOfDay
+                                        specificMinute = minute
+                                    },
+                                    specificHour,
+                                    specificMinute,
+                                    false
+                                ).show()
+                            }
                         ) {
-                            Text("Min: ${String.format("%02d", specificMinute)}")
+                            Text("Change Time")
                         }
                     }
                 } else {
