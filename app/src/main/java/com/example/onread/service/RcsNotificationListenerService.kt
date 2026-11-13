@@ -59,9 +59,15 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         val (rawTitle, text) = extractTitleAndText(notification)
+        val subject = notification.extras?.let {
+            it.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+                ?: it.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString()
+                ?: it.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()
+                ?: it.getCharSequence("android.subject")?.toString()
+        }?.trim()
 
-        if (rawTitle.isNullOrBlank() || text.isNullOrBlank()) {
-            Log.d(TAG, "Skipping notification from $packageName: title or text is null/blank")
+        if (rawTitle.isNullOrBlank() || (text.isNullOrBlank() && subject.isNullOrBlank())) {
+            Log.d(TAG, "Skipping notification from $packageName: title or text/subject is null/blank")
             return
         }
 
@@ -69,7 +75,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         serviceScope.launch {
             try {
-                processRcsNotification(rawTitle, text, postTime)
+                processRcsNotification(rawTitle, text, subject, postTime)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing RCS notification from $packageName", e)
             }
@@ -78,10 +84,11 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
     private suspend fun processRcsNotification(
         rawTitle: String,
-        messageText: String,
+        messageText: String?,
+        subject: String?,
         postTime: Long
     ) {
-        if (MessageDeduplicator.isDuplicateMessage(rawTitle, messageText, postTime)) {
+        if (MessageDeduplicator.isDuplicateMessage(rawTitle, messageText, subject, postTime)) {
             Log.d(TAG, "Skipping duplicate RCS notification for '$rawTitle'")
             return
         }
@@ -111,7 +118,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        if (MessageDeduplicator.isDuplicateMessage(contactSetting.phoneNumber, messageText, postTime)) {
+        if (MessageDeduplicator.isDuplicateMessage(contactSetting.phoneNumber, messageText, subject, postTime)) {
             Log.d(TAG, "Skipping duplicate RCS notification for resolved phone '${contactSetting.phoneNumber}'")
             return
         }
@@ -138,11 +145,18 @@ class RcsNotificationListenerService : NotificationListenerService() {
         }
 
         val triggerTime = resolved.triggerTime
+        val finalMessageText = if (!messageText.isNullOrBlank()) {
+            messageText
+        } else if (!subject.isNullOrBlank()) {
+            subject
+        } else {
+            "[RCS message]"
+        }
 
         val reminder = ReminderEntity(
             phoneNumber = contactSetting.phoneNumber,
             contactName = contactSetting.displayName,
-            messageBody = messageText,
+            messageBody = finalMessageText,
             timestamp = postTime,
             triggerTime = triggerTime,
             status = "PENDING"

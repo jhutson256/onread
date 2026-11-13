@@ -484,7 +484,8 @@ class SmsContentObserver(
                                 Log.d("ONREAD_CONSISTENCY", "Processing INCOMING SMS/RCS from $resolvedAddress (id: $id, date: $dateMs, threadId: $threadId)")
                                 processIncomingMessage(
                                     senderAddress = resolvedAddress,
-                                    body = body ?: "",
+                                    body = body,
+                                    subject = null,
                                     timestampMs = dateMs,
                                     sourceTag = "RCS/SMS",
                                     savedContactsOnly = savedContactsOnly,
@@ -630,11 +631,12 @@ class SmsContentObserver(
                             }
                             Log.d("ONREAD_CONSISTENCY", "Processing INCOMING MMS from sender $sender (id: $id, date: $dateMs, threadId: $threadId)")
 
-                            val body = extractMmsBody(id, subject)
+                            val body = extractMmsTextPart(id)
 
                             processIncomingMessage(
                                 senderAddress = sender,
                                 body = body,
+                                subject = subject,
                                 timestampMs = dateMs,
                                 sourceTag = "MMS",
                                 savedContactsOnly = savedContactsOnly,
@@ -668,7 +670,8 @@ class SmsContentObserver(
 
     private suspend fun processIncomingMessage(
         senderAddress: String,
-        body: String,
+        body: String?,
+        subject: String? = null,
         timestampMs: Long,
         sourceTag: String,
         savedContactsOnly: Boolean,
@@ -677,7 +680,7 @@ class SmsContentObserver(
         mutableContactSettings: MutableList<ContactSettingEntity>,
         threadId: Long = 0L
     ) {
-        if (MessageDeduplicator.isDuplicateMessage(senderAddress, body, timestampMs)) {
+        if (MessageDeduplicator.isDuplicateMessage(senderAddress, body, subject, timestampMs)) {
             Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (MessageDeduplicator)")
             return
         }
@@ -734,7 +737,7 @@ class SmsContentObserver(
         }
 
         val triggerTime = resolved.triggerTime
-        val messageText = if (body.isNotBlank()) body else "[RCS message]"
+        val messageText = determineMmsBody(body, subject)
 
         val reminder = ReminderEntity(
             phoneNumber = senderAddress,
@@ -797,9 +800,9 @@ class SmsContentObserver(
         return addresses
     }
 
-    private fun extractMmsBody(mmsId: Long, subject: String?): String {
+    private fun extractMmsTextPart(mmsId: Long): String? {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            return determineMmsBody(null, subject)
+            return null
         }
         var extractedText: String? = null
         try {
@@ -862,7 +865,7 @@ class SmsContentObserver(
             Log.e(TAG, "Error extracting MMS body for message $mmsId", e)
         }
 
-        return determineMmsBody(extractedText, subject)
+        return extractedText?.trim()?.ifEmpty { null }
     }
 
     private fun getContactName(context: Context, phoneNumber: String): String {
