@@ -448,7 +448,7 @@ fun SettingsScreen(
                                     )
                                 },
                                 valueRange = 0f..(countOptions.lastIndex).toFloat(),
-                                steps = countOptions.size - 2
+                                steps = 0
                             )
                         }
                     }
