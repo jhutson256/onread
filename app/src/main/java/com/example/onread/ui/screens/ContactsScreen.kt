@@ -26,10 +26,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import java.util.Locale
 import kotlin.math.roundToInt
-import android.app.TimePickerDialog
-import androidx.compose.ui.platform.LocalContext
-import android.view.ContextThemeWrapper
-import com.example.onread.R
+import androidx.compose.ui.platform.LocalLocale
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -43,7 +40,8 @@ fun ContactsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedContact by remember { mutableStateOf<ContactSettingEntity?>(null) }
 
-    val contactsPermissionState = rememberPermissionState(Manifest.permission.READ_CONTACTS)
+    val contactsPermissionState =
+        rememberPermissionState(Manifest.permission.READ_CONTACTS)
 
     val filteredContacts = contacts.filter {
         it.displayName.contains(searchQuery, ignoreCase = true) ||
@@ -81,7 +79,6 @@ fun ContactsScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            // Page title and Sync button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -115,10 +112,11 @@ fun ContactsScreen(
                 }
             }
 
-            // Permission banner if not granted
             if (!contactsPermissionState.status.isGranted) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
@@ -130,21 +128,28 @@ fun ContactsScreen(
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             fontWeight = FontWeight.Bold
                         )
+
                         Spacer(modifier = Modifier.height(4.dp))
+
                         Text(
                             text = "Grant permission to import and configure reminders for your device contacts.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { contactsPermissionState.launchPermissionRequest() }) {
+
+                        Button(
+                            onClick = {
+                                contactsPermissionState.launchPermissionRequest()
+                            }
+                        ) {
                             Text("Grant Permission")
                         }
                     }
                 }
             }
 
-            // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -152,7 +157,12 @@ fun ContactsScreen(
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
                 placeholder = { Text("Search contacts...") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.Search,
+                        contentDescription = null
+                    )
+                },
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium
             )
@@ -164,27 +174,35 @@ fun ContactsScreen(
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.ContactPhone,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                         )
+
                         Spacer(modifier = Modifier.height(16.dp))
+
                         Text(
                             text = "No contacts imported",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = {
-                            if (contactsPermissionState.status.isGranted) {
-                                viewModel.syncContacts()
-                            } else {
-                                contactsPermissionState.launchPermissionRequest()
+
+                        Button(
+                            onClick = {
+                                if (contactsPermissionState.status.isGranted) {
+                                    viewModel.syncContacts()
+                                } else {
+                                    contactsPermissionState.launchPermissionRequest()
+                                }
                             }
-                        }) {
+                        ) {
                             Text("Import Contacts")
                         }
                     }
@@ -196,15 +214,27 @@ fun ContactsScreen(
                         .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(filteredContacts, key = { it.contactId }) { contact ->
-                        val group = groups.find { it.id == contact.groupId }
+                    items(
+                        filteredContacts,
+                        key = { it.contactId }
+                    ) { contact ->
+                        val group = groups.find {
+                            it.id == contact.groupId
+                        }
+
                         ContactItemCard(
                             contact = contact,
                             groupName = group?.name,
                             defaultDelayMinutes = defaultDelayMinutes,
-                            onClick = { selectedContact = contact },
+                            onClick = {
+                                selectedContact = contact
+                            },
                             onToggleReminder = { enabled ->
-                                viewModel.updateContactSetting(contact.copy(isReminderEnabled = enabled))
+                                viewModel.updateContactSetting(
+                                    contact.copy(
+                                        isReminderEnabled = enabled
+                                    )
+                                )
                             }
                         )
                     }
@@ -213,13 +243,14 @@ fun ContactsScreen(
         }
     }
 
-    // Contact Setting Dialog
     selectedContact?.let { contact ->
         ContactSettingDialog(
             contact = contact,
             groups = groups,
             defaultDelayMinutes = defaultDelayMinutes,
-            onDismiss = { selectedContact = null },
+            onDismiss = {
+                selectedContact = null
+            },
             onSave = { updated ->
                 viewModel.updateContactSetting(updated)
                 selectedContact = null
@@ -236,14 +267,19 @@ fun ContactItemCard(
     onClick: () -> Unit,
     onToggleReminder: (Boolean) -> Unit
 ) {
-    val effectiveDelayMinutes = contact.customDelayMinutes ?: defaultDelayMinutes
-    val delayType = if (contact.customDelayMinutes != null) "Custom" else "Default"
+    val effectiveDelayMinutes =
+        contact.customDelayMinutes ?: defaultDelayMinutes
+
+    val delayType =
+        if (contact.customDelayMinutes != null) "Custom" else "Default"
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 1.dp
+        )
     ) {
         Row(
             modifier = Modifier
@@ -252,36 +288,60 @@ fun ContactItemCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text = contact.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+
                 Text(
                     text = contact.phoneNumber,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
                 if (!groupName.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
+
                     Text(
                         text = "Group: $groupName",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+
                 Spacer(modifier = Modifier.height(4.dp))
-                val scheduleText = if (contact.useSpecificTime) {
-                    "Specific Time: ${String.format(Locale.getDefault(), "%02d:%02d", contact.specificHour, contact.specificMinute)}"
-                } else {
-                    val delayFormatted = when {
-                        effectiveDelayMinutes < 60 -> "$effectiveDelayMinutes minutes"
-                        effectiveDelayMinutes % 60 == 0 -> "${effectiveDelayMinutes / 60} hours"
-                        else -> "${effectiveDelayMinutes / 60} hr ${effectiveDelayMinutes % 60} min"
+
+                val scheduleText =
+                    if (contact.useSpecificTime) {
+                        "Specific Time: ${
+                            String.format(
+                                LocalLocale.current.platformLocale,
+                                "%02d:%02d",
+                                contact.specificHour,
+                                contact.specificMinute
+                            )
+                        }"
+                    } else {
+                        val delayFormatted = when {
+                            effectiveDelayMinutes < 60 ->
+                                "$effectiveDelayMinutes minutes"
+
+                            effectiveDelayMinutes % 60 == 0 ->
+                                "${effectiveDelayMinutes / 60} hours"
+
+                            else ->
+                                "${effectiveDelayMinutes / 60} hr ${
+                                    effectiveDelayMinutes % 60
+                                } min"
+                        }
+
+                        "Delay: $delayFormatted ($delayType)"
                     }
-                    "Delay: $delayFormatted ($delayType)"
-                }
+
                 Text(
                     text = scheduleText,
                     style = MaterialTheme.typography.labelSmall,
@@ -297,6 +357,7 @@ fun ContactItemCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactSettingDialog(
     contact: ContactSettingEntity,
@@ -305,17 +366,48 @@ fun ContactSettingDialog(
     onDismiss: () -> Unit,
     onSave: (ContactSettingEntity) -> Unit
 ) {
-    val context = LocalContext.current
-    var isEnabled by remember { mutableStateOf(contact.isReminderEnabled) }
-    var selectedGroupId by remember { mutableStateOf(contact.groupId) }
-    var useSpecificTime by remember { mutableStateOf(contact.useSpecificTime) }
-    var specificHour by remember { mutableIntStateOf(contact.specificHour) }
-    var specificMinute by remember { mutableIntStateOf(contact.specificMinute) }
-    var useCustomDelay by remember { mutableStateOf(contact.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableFloatStateOf((contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
-    var expandedGroupDropdown by remember { mutableStateOf(false) }
+    var isEnabled by remember {
+        mutableStateOf(contact.isReminderEnabled)
+    }
 
-    val effectiveMinutes = if (useCustomDelay) delayMinutes.toInt() else defaultDelayMinutes
+    var selectedGroupId by remember {
+        mutableStateOf(contact.groupId)
+    }
+
+    var useSpecificTime by remember {
+        mutableStateOf(contact.useSpecificTime)
+    }
+
+    var specificHour by remember {
+        mutableIntStateOf(contact.specificHour)
+    }
+
+    var specificMinute by remember {
+        mutableIntStateOf(contact.specificMinute)
+    }
+
+    var useCustomDelay by remember {
+        mutableStateOf(contact.customDelayMinutes != null)
+    }
+
+    var delayMinutes by remember {
+        mutableFloatStateOf(
+            (contact.customDelayMinutes ?: defaultDelayMinutes).toFloat()
+        )
+    }
+
+    var expandedGroupDropdown by remember {
+        mutableStateOf(false)
+    }
+
+    var showTimePicker by remember {
+        mutableStateOf(false)
+    }
+
+    val effectiveMinutes =
+        if (useCustomDelay) delayMinutes.toInt()
+        else defaultDelayMinutes
+
     val delayType = when {
         useSpecificTime -> "Specific Time"
         useCustomDelay -> "Custom"
@@ -324,14 +416,19 @@ fun ContactSettingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Configure ${contact.displayName}") },
+        title = {
+            Text("Configure ${contact.displayName}")
+        },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     text = contact.phoneNumber,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
@@ -340,36 +437,61 @@ fun ContactSettingDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Reminders")
-                    Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
+
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = {
+                            isEnabled = it
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Group assignment dropdown
-                Text("Group", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Group",
+                    style = MaterialTheme.typography.labelMedium
+                )
+
                 Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
+
+                Box(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     OutlinedButton(
-                        onClick = { expandedGroupDropdown = true },
+                        onClick = {
+                            expandedGroupDropdown = true
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        val groupName = groups.find { it.id == selectedGroupId }?.name ?: "None (No Group)"
+                        val groupName =
+                            groups.find { it.id == selectedGroupId }?.name
+                                ?: "None (No Group)"
+
                         Text("Group: $groupName")
                     }
+
                     DropdownMenu(
                         expanded = expandedGroupDropdown,
-                        onDismissRequest = { expandedGroupDropdown = false }
+                        onDismissRequest = {
+                            expandedGroupDropdown = false
+                        }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("None (No Group)") },
+                            text = {
+                                Text("None (No Group)")
+                            },
                             onClick = {
                                 selectedGroupId = null
                                 expandedGroupDropdown = false
                             }
                         )
+
                         groups.forEach { group ->
                             DropdownMenuItem(
-                                text = { Text(group.name) },
+                                text = {
+                                    Text(group.name)
+                                },
                                 onClick = {
                                     selectedGroupId = group.id
                                     expandedGroupDropdown = false
@@ -387,7 +509,13 @@ fun ContactSettingDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Use Specific Clock Time")
-                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
+
+                    Switch(
+                        checked = useSpecificTime,
+                        onCheckedChange = {
+                            useSpecificTime = it
+                        }
+                    )
                 }
 
                 if (useSpecificTime) {
@@ -411,10 +539,11 @@ fun ContactSettingDialog(
                                 else if (specificHour > 12) specificHour - 12
                                 else specificHour
 
-                            val amPm = if (specificHour >= 12) "PM" else "AM"
+                            val amPm =
+                                if (specificHour >= 12) "PM" else "AM"
 
                             val formattedTime = String.format(
-                                Locale.getDefault(),
+                                LocalLocale.current.platformLocale,
                                 "%d:%02d %s",
                                 displayHour,
                                 specificMinute,
@@ -431,19 +560,7 @@ fun ContactSettingDialog(
 
                         Button(
                             onClick = {
-                                TimePickerDialog(
-                                    ContextThemeWrapper(
-                                        context,
-                                        R.style.Theme_Onread_TimePickerDialog
-                                    ),
-                                    { _, hourOfDay, minute ->
-                                        specificHour = hourOfDay
-                                        specificMinute = minute
-                                    },
-                                    specificHour,
-                                    specificMinute,
-                                    false
-                                ).show()
+                                showTimePicker = true
                             }
                         ) {
                             Text("Change Time")
@@ -451,13 +568,20 @@ fun ContactSettingDialog(
                     }
                 } else {
                     Spacer(modifier = Modifier.height(16.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Custom Delay")
-                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+
+                        Switch(
+                            checked = useCustomDelay,
+                            onCheckedChange = {
+                                useCustomDelay = it
+                            }
+                        )
                     }
 
                     if (useCustomDelay) {
@@ -471,9 +595,10 @@ fun ContactSettingDialog(
                             }
                         }
 
-                        val currentIndex = delayOptions.indexOfFirst {
-                            it >= delayMinutes.toInt()
-                        }.coerceAtLeast(0)
+                        val currentIndex =
+                            delayOptions.indexOfFirst {
+                                it >= delayMinutes.toInt()
+                            }.coerceAtLeast(0)
 
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -483,50 +608,72 @@ fun ContactSettingDialog(
                                     "Delay: ${delayMinutes.toInt()} minutes"
 
                                 delayMinutes.toInt() % 60 == 0 ->
-                                    "Delay: ${delayMinutes.toInt() / 60} hours"
+                                    "Delay: ${
+                                        delayMinutes.toInt() / 60
+                                    } hours"
 
                                 else ->
-                                    "Delay: ${delayMinutes.toInt() / 60} hr ${
+                                    "Delay: ${
+                                        delayMinutes.toInt() / 60
+                                    } hr ${
                                         delayMinutes.toInt() % 60
                                     } min"
                             },
                             style = MaterialTheme.typography.bodySmall
                         )
+
                         Slider(
                             value = currentIndex.toFloat(),
                             onValueChange = { value ->
                                 delayMinutes =
                                     delayOptions[value.roundToInt()].toFloat()
                             },
-                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            valueRange =
+                                0f..delayOptions.lastIndex.toFloat(),
                             steps = 0
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    colors = CardDefaults.cardColors(
+                        containerColor =
+                            MaterialTheme.colorScheme.surfaceVariant
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
                         Text(
                             text = "Effective Reminder Settings",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+
                         Spacer(modifier = Modifier.height(2.dp))
+
                         Text(
                             text = "Delay Type: $delayType",
                             style = MaterialTheme.typography.bodyMedium
                         )
+
                         if (!useSpecificTime) {
                             Text(
                                 text = "Applied Reminder Time: ${
                                     when {
-                                        effectiveMinutes < 60 -> "$effectiveMinutes minutes"
-                                        effectiveMinutes % 60 == 0 -> "${effectiveMinutes / 60} hours"
-                                        else -> "${effectiveMinutes / 60} hr ${effectiveMinutes % 60} min"
+                                        effectiveMinutes < 60 ->
+                                            "$effectiveMinutes minutes"
+
+                                        effectiveMinutes % 60 == 0 ->
+                                            "${effectiveMinutes / 60} hours"
+
+                                        else ->
+                                            "${effectiveMinutes / 60} hr ${
+                                                effectiveMinutes % 60
+                                            } min"
                                     }
                                 }",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -535,7 +682,14 @@ fun ContactSettingDialog(
                             )
                         } else {
                             Text(
-                                text = "Target Time: ${String.format(Locale.getDefault(), "%02d:%02d", specificHour, specificMinute)}",
+                                text = "Target Time: ${
+                                    String.format(
+                                        LocalLocale.current.platformLocale,
+                                        "%02d:%02d",
+                                        specificHour,
+                                        specificMinute
+                                    )
+                                }",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
@@ -546,25 +700,81 @@ fun ContactSettingDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                onSave(
-                    contact.copy(
-                        isReminderEnabled = isEnabled,
-                        groupId = selectedGroupId,
-                        useSpecificTime = useSpecificTime,
-                        specificHour = specificHour,
-                        specificMinute = specificMinute,
-                        customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null
+            Button(
+                onClick = {
+                    onSave(
+                        contact.copy(
+                            isReminderEnabled = isEnabled,
+                            groupId = selectedGroupId,
+                            useSpecificTime = useSpecificTime,
+                            specificHour = specificHour,
+                            specificMinute = specificMinute,
+                            customDelayMinutes =
+                                if (!useSpecificTime && useCustomDelay) {
+                                    delayMinutes.toInt()
+                                } else {
+                                    null
+                                }
+                        )
                     )
-                )
-            }) {
+                }
+            ) {
                 Text("Save")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
     )
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = specificHour,
+            initialMinute = specificMinute,
+            is24Hour = false
+        )
+
+        TimePickerDialog(
+            onDismissRequest = {
+                showTimePicker = false
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        specificHour = timePickerState.hour
+                        specificMinute = timePickerState.minute
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            title = {
+                Text("Select Time")
+            }
+        ) {
+            TimePicker(
+                state = timePickerState,
+                colors = TimePickerDefaults.colors(
+                    selectorColor = MaterialTheme.colorScheme.primary,
+
+                    periodSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+
+                    periodSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary,
+
+                    timeSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+
+                    timeSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    }
 }

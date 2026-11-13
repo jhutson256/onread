@@ -33,6 +33,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.ui.platform.LocalLocale
 
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -40,14 +41,19 @@ fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-@OptIn(ExperimentalPermissionsApi::class)
+@OptIn(
+    ExperimentalPermissionsApi::class,
+    ExperimentalMaterial3Api::class
+)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val activity = remember { context.findActivity() }
-    val alarmManager = remember { context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager }
+    val alarmManager = remember {
+        context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+    }
 
     val colorTheme by viewModel.colorTheme.collectAsState()
     val defaultDelayMinutes by viewModel.defaultDelayMinutes.collectAsState()
@@ -56,29 +62,43 @@ fun SettingsScreen(
     val specificTimeHour by viewModel.specificTimeHour.collectAsState()
     val specificTimeMinute by viewModel.specificTimeMinute.collectAsState()
 
+    var showTimePicker by remember {
+        mutableStateOf(false)
+    }
+
     val permissionsList = remember {
         val list = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_SMS
         )
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(Manifest.permission.POST_NOTIFICATIONS)
         }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             list.add("android.permission.SCHEDULE_EXACT_ALARM")
         }
+
         list
     }
 
     val runtimePermissions = remember {
-        permissionsList.filter { it != "android.permission.SCHEDULE_EXACT_ALARM" }
+        permissionsList.filter {
+            it != "android.permission.SCHEDULE_EXACT_ALARM"
+        }
     }
-    val runtimePermissionsState = rememberMultiplePermissionsState(runtimePermissions)
+
+    val runtimePermissionsState =
+        rememberMultiplePermissionsState(runtimePermissions)
 
     var exactAlarmGranted by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) && (alarmManager != null)) {
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    alarmManager != null
+                ) {
                     alarmManager.canScheduleExactAlarms()
                 } else {
                     true
@@ -91,40 +111,64 @@ fun SettingsScreen(
 
     var isNotificationListenerGranted by remember {
         mutableStateOf(
-            NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+            NotificationManagerCompat
+                .getEnabledListenerPackages(context)
+                .contains(context.packageName)
         )
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, alarmManager) {
+
+    DisposableEffect(
+        lifecycleOwner,
+        alarmManager
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager != null) {
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    alarmManager != null
+                ) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        exactAlarmGranted = alarmManager.canScheduleExactAlarms()
+                        exactAlarmGranted =
+                            alarmManager.canScheduleExactAlarms()
                     }
                 }
-                isNotificationListenerGranted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+                isNotificationListenerGranted =
+                    NotificationManagerCompat
+                        .getEnabledListenerPackages(context)
+                        .contains(context.packageName)
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
-    val isPermissionGranted: (String) -> Boolean = { perm ->
-        when (perm) {
-            "android.permission.SCHEDULE_EXACT_ALARM" -> exactAlarmGranted
-            else -> runtimePermissionsState.permissions.find { it.permission == perm }?.status?.isGranted == true
+    val isPermissionGranted: (String) -> Boolean = { permission ->
+        when (permission) {
+            "android.permission.SCHEDULE_EXACT_ALARM" ->
+                exactAlarmGranted
+
+            else ->
+                runtimePermissionsState.permissions
+                    .find { it.permission == permission }
+                    ?.status
+                    ?.isGranted == true
         }
     }
 
-    val allPermissionsGranted = permissionsList.all { isPermissionGranted(it) }
+    val allPermissionsGranted =
+        permissionsList.all { isPermissionGranted(it) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -147,25 +191,39 @@ fun SettingsScreen(
                     )
                 }
             }
-            // Appearance Theme Card
+
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
                         Text(
                             text = "Appearance Theme",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+
                         Spacer(modifier = Modifier.height(12.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf("SYSTEM" to "System", "LIGHT" to "Light", "DARK" to "Dark").forEach { (key, label) ->
+                            listOf(
+                                "SYSTEM" to "System",
+                                "LIGHT" to "Light",
+                                "DARK" to "Dark"
+                            ).forEach { (key, label) ->
                                 FilterChip(
                                     selected = colorTheme == key,
-                                    onClick = { viewModel.updateColorTheme(key) },
-                                    label = { Text(label) },
+                                    onClick = {
+                                        viewModel.updateColorTheme(key)
+                                    },
+                                    label = {
+                                        Text(label)
+                                    },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -174,16 +232,21 @@ fun SettingsScreen(
                 }
             }
 
-            // Reminder Timing Mode Card (Delay vs Specific Time)
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
                         Text(
                             text = "Default Reminder Delay",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+
                         Spacer(modifier = Modifier.height(4.dp))
+
                         Text(
                             text = when {
                                 defaultDelayMinutes < 60 ->
@@ -193,13 +256,15 @@ fun SettingsScreen(
                                     "${defaultDelayMinutes / 60} hours"
 
                                 else ->
-                                    "${defaultDelayMinutes / 60} hr ${defaultDelayMinutes % 60} min"
+                                    "${defaultDelayMinutes / 60} hr ${
+                                        defaultDelayMinutes % 60
+                                    } min"
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
 
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         val delayOptions = remember {
                             buildList {
@@ -211,42 +276,59 @@ fun SettingsScreen(
                             }
                         }
 
-                        val sliderIndex = delayOptions.indexOfFirst {
-                            it >= defaultDelayMinutes
-                        }.coerceAtLeast(0)
+                        val sliderIndex =
+                            delayOptions.indexOfFirst {
+                                it >= defaultDelayMinutes
+                            }.coerceAtLeast(0)
 
                         Slider(
                             value = sliderIndex.toFloat(),
                             onValueChange = { value ->
                                 val selectedIndex = value.roundToInt()
+
                                 viewModel.updateDefaultDelayMinutes(
                                     delayOptions[selectedIndex]
                                 )
                             },
-                            valueRange = 0f..(delayOptions.lastIndex).toFloat(),
+                            valueRange =
+                                0f..delayOptions.lastIndex.toFloat(),
                             steps = 0
                         )
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement =
+                                Arrangement.SpaceBetween,
+                            verticalAlignment =
+                                Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Use Clock Based Reminders",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style =
+                                        MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
+
                                 Spacer(modifier = Modifier.height(4.dp))
+
                                 Text(
                                     text = "Trigger reminders at a fixed time of day instead of a delay after receipt.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant
                                 )
                             }
+
                             Switch(
                                 checked = useSpecificTime,
-                                onCheckedChange = { viewModel.updateUseSpecificTime(it) }
+                                onCheckedChange = {
+                                    viewModel.updateUseSpecificTime(it)
+                                }
                             )
                         }
 
@@ -257,37 +339,58 @@ fun SettingsScreen(
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement =
+                                    Arrangement.SpaceBetween,
+                                verticalAlignment =
+                                    Alignment.CenterVertically
                             ) {
                                 Column {
                                     Text(
                                         text = "Target Time",
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style =
+                                            MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium
                                     )
+
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    val displayHour = if (specificTimeHour == 0) 12 else if (specificTimeHour > 12) specificTimeHour - 12 else specificTimeHour
-                                    val amPm = if (specificTimeHour >= 12) "PM" else "AM"
-                                    val formattedTime = String.format(Locale.getDefault(), "%d:%02d %s", displayHour, specificTimeMinute, amPm)
+
+                                    val displayHour =
+                                        if (specificTimeHour == 0) {
+                                            12
+                                        } else if (specificTimeHour > 12) {
+                                            specificTimeHour - 12
+                                        } else {
+                                            specificTimeHour
+                                        }
+
+                                    val amPm =
+                                        if (specificTimeHour >= 12) {
+                                            "PM"
+                                        } else {
+                                            "AM"
+                                        }
+
+                                    val formattedTime = String.format(
+                                        LocalLocale.current.platformLocale,
+                                        "%d:%02d %s",
+                                        displayHour,
+                                        specificTimeMinute,
+                                        amPm
+                                    )
+
                                     Text(
                                         text = formattedTime,
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style =
+                                            MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color =
+                                            MaterialTheme.colorScheme.primary
                                     )
                                 }
+
                                 Button(
                                     onClick = {
-                                        android.app.TimePickerDialog(
-                                            context,
-                                            { _, hourOfDay, minute ->
-                                                viewModel.updateSpecificTime(hourOfDay, minute)
-                                            },
-                                            specificTimeHour,
-                                            specificTimeMinute,
-                                            false
-                                        ).show()
+                                        showTimePicker = true
                                     }
                                 ) {
                                     Text("Change Time")
@@ -298,71 +401,103 @@ fun SettingsScreen(
                 }
             }
 
-            // Saved Contacts Only Card
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween,
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Text(
                                 text = "Saved Contacts Only",
-                                style = MaterialTheme.typography.titleMedium,
+                                style =
+                                    MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
+
                             Spacer(modifier = Modifier.height(4.dp))
+
                             Text(
                                 text = "Only trigger reminders for contacts saved in your address book.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style =
+                                    MaterialTheme.typography.bodySmall,
+                                color =
+                                    MaterialTheme.colorScheme
+                                        .onSurfaceVariant
                             )
                         }
+
                         Switch(
                             checked = savedContactsOnly,
-                            onCheckedChange = { viewModel.updateSavedContactsOnly(it) }
+                            onCheckedChange = {
+                                viewModel.updateSavedContactsOnly(it)
+                            }
                         )
                     }
                 }
             }
 
-            // Notification Listener Permission Card (RCS & Messages)
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement =
+                                Arrangement.SpaceBetween,
+                            verticalAlignment =
+                                Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = "Notification Listener (RCS & Messages)",
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style =
+                                        MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
+
                                 Spacer(modifier = Modifier.height(4.dp))
+
                                 Text(
                                     text = "Allows ONread to capture 100% of RCS text messages from Google Messages and other messaging apps.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant
                                 )
                             }
+
                             if (isNotificationListenerGranted) {
                                 Icon(
                                     Icons.Rounded.CheckCircle,
-                                    contentDescription = "Notification Access Granted",
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    contentDescription =
+                                        "Notification Access Granted",
+                                    tint =
+                                        MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(start = 8.dp)
                                 )
                             } else {
                                 Icon(
                                     Icons.Rounded.Error,
-                                    contentDescription = "Notification Access Not Granted",
-                                    tint = MaterialTheme.colorScheme.error,
+                                    contentDescription =
+                                        "Notification Access Not Granted",
+                                    tint =
+                                        MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(start = 8.dp)
                                 )
                             }
@@ -370,13 +505,21 @@ fun SettingsScreen(
 
                         if (!isNotificationListenerGranted) {
                             Spacer(modifier = Modifier.height(12.dp))
+
                             Button(
                                 onClick = {
                                     try {
-                                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                        val intent = Intent(
+                                            Settings
+                                                .ACTION_NOTIFICATION_LISTENER_SETTINGS
+                                        )
+
                                         context.startActivity(intent)
                                     } catch (_: Exception) {
-                                        val intent = Intent(Settings.ACTION_SETTINGS)
+                                        val intent = Intent(
+                                            Settings.ACTION_SETTINGS
+                                        )
+
                                         context.startActivity(intent)
                                     }
                                 },
@@ -389,62 +532,128 @@ fun SettingsScreen(
                 }
             }
 
-            // Runtime Permissions Card
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
                         Text(
                             text = "Required Permissions",
-                            style = MaterialTheme.typography.titleMedium,
+                            style =
+                                MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        permissionsList.forEach { perm ->
-                            val permName = when (perm) {
-                                Manifest.permission.READ_CONTACTS -> "Read Contacts"
-                                Manifest.permission.READ_SMS -> "Read SMS"
-                                Manifest.permission.POST_NOTIFICATIONS -> "Post Notifications"
-                                "android.permission.SCHEDULE_EXACT_ALARM" -> "Schedule Exact Alarm"
-                                else -> perm
+                        permissionsList.forEach { permission ->
+                            val permissionName = when (permission) {
+                                Manifest.permission.READ_CONTACTS ->
+                                    "Read Contacts"
+
+                                Manifest.permission.READ_SMS ->
+                                    "Read SMS"
+
+                                Manifest.permission.POST_NOTIFICATIONS ->
+                                    "Post Notifications"
+
+                                "android.permission.SCHEDULE_EXACT_ALARM" ->
+                                    "Schedule Exact Alarm"
+
+                                else ->
+                                    permission
                             }
-                            val granted = isPermissionGranted(perm)
+
+                            val granted =
+                                isPermissionGranted(permission)
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement =
+                                    Arrangement.SpaceBetween,
+                                verticalAlignment =
+                                    Alignment.CenterVertically
                             ) {
-                                Text(permName, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    permissionName,
+                                    style =
+                                        MaterialTheme.typography.bodyMedium
+                                )
+
                                 if (granted) {
-                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Granted", tint = MaterialTheme.colorScheme.primary)
+                                    Icon(
+                                        Icons.Rounded.CheckCircle,
+                                        contentDescription = "Granted",
+                                        tint =
+                                            MaterialTheme.colorScheme.primary
+                                    )
                                 } else {
-                                    Icon(Icons.Rounded.Error, contentDescription = "Not Granted", tint = MaterialTheme.colorScheme.error)
+                                    Icon(
+                                        Icons.Rounded.Error,
+                                        contentDescription =
+                                            "Not Granted",
+                                        tint =
+                                            MaterialTheme.colorScheme.error
+                                    )
                                 }
                             }
                         }
 
                         if (!allPermissionsGranted) {
                             Spacer(modifier = Modifier.height(12.dp))
+
                             Button(
                                 onClick = {
-                                    val missingRuntime = runtimePermissionsState.permissions
-                                        .asSequence()
-                                        .filter { !it.status.isGranted }
-                                        .map { it.permission }
-                                        .toList()
+                                    val missingRuntime =
+                                        runtimePermissionsState.permissions
+                                            .asSequence()
+                                            .filter {
+                                                !it.status.isGranted
+                                            }
+                                            .map {
+                                                it.permission
+                                            }
+                                            .toList()
 
-                                    if (missingRuntime.isNotEmpty() && activity != null) {
-                                        ActivityCompat.requestPermissions(activity, missingRuntime.toTypedArray(), 1001)
+                                    if (
+                                        missingRuntime.isNotEmpty() &&
+                                        activity != null
+                                    ) {
+                                        ActivityCompat.requestPermissions(
+                                            activity,
+                                            missingRuntime.toTypedArray(),
+                                            1001
+                                        )
                                     }
 
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !exactAlarmGranted) {
+                                    if (
+                                        Build.VERSION.SDK_INT >=
+                                        Build.VERSION_CODES.S &&
+                                        !exactAlarmGranted
+                                    ) {
                                         try {
-                                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}"))
+                                            val intent = Intent(
+                                                Settings
+                                                    .ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                                Uri.parse(
+                                                    "package:${context.packageName}"
+                                                )
+                                            )
+
                                             context.startActivity(intent)
                                         } catch (_: Exception) {
-                                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                                            val intent = Intent(
+                                                Settings
+                                                    .ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                Uri.parse(
+                                                    "package:${context.packageName}"
+                                                )
+                                            )
+
                                             context.startActivity(intent)
                                         }
                                     }
@@ -457,6 +666,66 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = specificTimeHour,
+            initialMinute = specificTimeMinute,
+            is24Hour = false
+        )
+
+        TimePickerDialog(
+            onDismissRequest = {
+                showTimePicker = false
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateSpecificTime(
+                            timePickerState.hour,
+                            timePickerState.minute
+                        )
+
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            title = {
+                Text("Select Time")
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("CANCEL")
+                }
+            }
+        ) {
+            TimePicker(
+                state = timePickerState,
+                colors = TimePickerDefaults.colors(
+                    selectorColor =
+                        MaterialTheme.colorScheme.primary,
+
+                    periodSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+
+                    periodSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary,
+
+                    timeSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+
+                    timeSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary
+                )
+            )
         }
     }
 }

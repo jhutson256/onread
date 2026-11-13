@@ -23,6 +23,7 @@ import kotlin.math.roundToInt
 import java.util.UUID
 import android.app.TimePickerDialog
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 
 @Composable
 fun GroupsScreen(
@@ -185,7 +186,7 @@ fun GroupItemCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 val scheduleText = if (group.useSpecificTime) {
-                    val formattedTime = String.format(Locale.getDefault(), "%02d:%02d", group.specificHour, group.specificMinute)
+                    val formattedTime = String.format(LocalLocale.current.platformLocale, "%02d:%02d", group.specificHour, group.specificMinute)
                     "Schedule: Specific Time ($formattedTime)"
                 } else {
                     val delay = group.customDelayMinutes ?: defaultDelayMinutes
@@ -216,6 +217,7 @@ fun GroupItemCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupEditDialog(
     group: GroupEntity?,
@@ -223,20 +225,52 @@ fun GroupEditDialog(
     onDismiss: () -> Unit,
     onSave: (GroupEntity) -> Unit
 ) {
-    val context = LocalContext.current
-    var name by remember { mutableStateOf(group?.name ?: "") }
-    var isEnabled by remember { mutableStateOf(group?.isReminderEnabled ?: true) }
-    var useSpecificTime by remember { mutableStateOf(group?.useSpecificTime ?: false) }
-    var specificHour by remember { mutableIntStateOf(group?.specificHour ?: 9) }
-    var specificMinute by remember { mutableIntStateOf(group?.specificMinute ?: 0) }
-    var useCustomDelay by remember { mutableStateOf(group?.customDelayMinutes != null) }
-    var delayMinutes by remember { mutableFloatStateOf((group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()) }
+    var name by remember {
+        mutableStateOf(group?.name ?: "")
+    }
+
+    var isEnabled by remember {
+        mutableStateOf(group?.isReminderEnabled ?: true)
+    }
+
+    var useSpecificTime by remember {
+        mutableStateOf(group?.useSpecificTime ?: false)
+    }
+
+    var specificHour by remember {
+        mutableIntStateOf(group?.specificHour ?: 9)
+    }
+
+    var specificMinute by remember {
+        mutableIntStateOf(group?.specificMinute ?: 0)
+    }
+
+    var useCustomDelay by remember {
+        mutableStateOf(group?.customDelayMinutes != null)
+    }
+
+    var delayMinutes by remember {
+        mutableFloatStateOf(
+            (group?.customDelayMinutes ?: defaultDelayMinutes).toFloat()
+        )
+    }
+
+    var showTimePicker by remember {
+        mutableStateOf(false)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (group == null) "Create Group" else "Edit Group") },
+        title = {
+            Text(
+                if (group == null) "Create Group"
+                else "Edit Group"
+            )
+        },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -244,6 +278,7 @@ fun GroupEditDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
@@ -252,7 +287,13 @@ fun GroupEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Reminders")
-                    Switch(checked = isEnabled, onCheckedChange = { isEnabled = it })
+
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = {
+                            isEnabled = it
+                        }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -263,7 +304,13 @@ fun GroupEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Use Specific Clock Time")
-                    Switch(checked = useSpecificTime, onCheckedChange = { useSpecificTime = it })
+
+                    Switch(
+                        checked = useSpecificTime,
+                        onCheckedChange = {
+                            useSpecificTime = it
+                        }
+                    )
                 }
 
                 if (useSpecificTime) {
@@ -287,10 +334,11 @@ fun GroupEditDialog(
                                 else if (specificHour > 12) specificHour - 12
                                 else specificHour
 
-                            val amPm = if (specificHour >= 12) "PM" else "AM"
+                            val amPm =
+                                if (specificHour >= 12) "PM" else "AM"
 
                             val formattedTime = String.format(
-                                Locale.getDefault(),
+                                LocalLocale.current.platformLocale,
                                 "%d:%02d %s",
                                 displayHour,
                                 specificMinute,
@@ -307,16 +355,7 @@ fun GroupEditDialog(
 
                         Button(
                             onClick = {
-                                TimePickerDialog(
-                                    context,
-                                    { _, hourOfDay, minute ->
-                                        specificHour = hourOfDay
-                                        specificMinute = minute
-                                    },
-                                    specificHour,
-                                    specificMinute,
-                                    false
-                                ).show()
+                                showTimePicker = true
                             }
                         ) {
                             Text("Change Time")
@@ -324,13 +363,20 @@ fun GroupEditDialog(
                     }
                 } else {
                     Spacer(modifier = Modifier.height(16.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Custom Delay")
-                        Switch(checked = useCustomDelay, onCheckedChange = { useCustomDelay = it })
+
+                        Switch(
+                            checked = useCustomDelay,
+                            onCheckedChange = {
+                                useCustomDelay = it
+                            }
+                        )
                     }
 
                     if (useCustomDelay) {
@@ -344,28 +390,41 @@ fun GroupEditDialog(
                             }
                         }
 
-                        val currentIndex = delayOptions.indexOfFirst {
-                            it >= delayMinutes.toInt()
-                        }.coerceAtLeast(0)
+                        val currentIndex =
+                            delayOptions.indexOfFirst {
+                                it >= delayMinutes.toInt()
+                            }.coerceAtLeast(0)
 
                         Spacer(modifier = Modifier.height(8.dp))
+
                         Text(
-                            text = "Delay: ${
-                                when {
-                                    delayMinutes.toInt() < 60 -> "${delayMinutes.toInt()} minutes"
-                                    delayMinutes.toInt() % 60 == 0 -> "${delayMinutes.toInt() / 60} hours"
-                                    else -> "${delayMinutes.toInt() / 60} hr ${delayMinutes.toInt() % 60} min"
-                                }
-                            }",
+                            text = when {
+                                delayMinutes.toInt() < 60 ->
+                                    "Delay: ${delayMinutes.toInt()} minutes"
+
+                                delayMinutes.toInt() % 60 == 0 ->
+                                    "Delay: ${
+                                        delayMinutes.toInt() / 60
+                                    } hours"
+
+                                else ->
+                                    "Delay: ${
+                                        delayMinutes.toInt() / 60
+                                    } hr ${
+                                        delayMinutes.toInt() % 60
+                                    } min"
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
 
                         Slider(
                             value = currentIndex.toFloat(),
                             onValueChange = { value ->
-                                delayMinutes = delayOptions[value.roundToInt()].toFloat()
+                                delayMinutes =
+                                    delayOptions[value.roundToInt()].toFloat()
                             },
-                            valueRange = 0f..delayOptions.lastIndex.toFloat(),
+                            valueRange =
+                                0f..delayOptions.lastIndex.toFloat(),
                             steps = 0
                         )
                     }
@@ -376,13 +435,20 @@ fun GroupEditDialog(
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        val groupId = group?.id ?: UUID.randomUUID().toString()
+                        val groupId =
+                            group?.id ?: UUID.randomUUID().toString()
+
                         onSave(
                             GroupEntity(
                                 id = groupId,
                                 name = name.trim(),
                                 isReminderEnabled = isEnabled,
-                                customDelayMinutes = if (!useSpecificTime && useCustomDelay) delayMinutes.toInt() else null,
+                                customDelayMinutes =
+                                    if (!useSpecificTime && useCustomDelay) {
+                                        delayMinutes.toInt()
+                                    } else {
+                                        null
+                                    },
                                 useSpecificTime = useSpecificTime,
                                 specificHour = specificHour,
                                 specificMinute = specificMinute
@@ -396,11 +462,65 @@ fun GroupEditDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
     )
+
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = specificHour,
+            initialMinute = specificMinute,
+            is24Hour = false
+        )
+
+        TimePickerDialog(
+            onDismissRequest = {
+                showTimePicker = false
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        specificHour = timePickerState.hour
+                        specificMinute = timePickerState.minute
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            title = {
+                Text("Select Time")
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showTimePicker = false
+                    }
+                ) {
+                    Text("CANCEL")
+                }
+            }
+        ) {
+            TimePicker(
+                state = timePickerState,
+                colors = TimePickerDefaults.colors(
+                    selectorColor = MaterialTheme.colorScheme.primary,
+                    periodSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+                    periodSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary,
+                    timeSelectorSelectedContainerColor =
+                        MaterialTheme.colorScheme.primary,
+                    timeSelectorSelectedContentColor =
+                        MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    }
 }
 
 @Composable
