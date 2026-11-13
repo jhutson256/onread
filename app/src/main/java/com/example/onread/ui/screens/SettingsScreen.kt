@@ -58,6 +58,9 @@ fun SettingsScreen(
     val colorTheme by viewModel.colorTheme.collectAsState()
     val defaultDelayMinutes by viewModel.defaultDelayMinutes.collectAsState()
     val savedContactsOnly by viewModel.savedContactsOnly.collectAsState()
+    val snoozeEnabled by viewModel.snoozeEnabled.collectAsState()
+    val snoozeDurationMinutes by viewModel.snoozeDurationMinutes.collectAsState()
+    val maxSnoozeCount by viewModel.maxSnoozeCount.collectAsState()
     val useSpecificTime by viewModel.useSpecificTime.collectAsState()
     val specificTimeHour by viewModel.specificTimeHour.collectAsState()
     val specificTimeMinute by viewModel.specificTimeMinute.collectAsState()
@@ -446,6 +449,130 @@ fun SettingsScreen(
                 }
             }
 
+            // Notification Snooze Card
+            // Follows the same layout as the "Default Reminder Delay" card:
+            // a title row with a Switch, then extra options under a divider.
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Snooze Button in Notification",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Show a snooze action button on reminder notifications.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = snoozeEnabled,
+                                onCheckedChange = { viewModel.updateSnoozeEnabled(it) }
+                            )
+                        }
+
+                        if (snoozeEnabled) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // --- Snooze Duration ---
+                            Text(
+                                text = "Snooze Duration",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = when {
+                                    snoozeDurationMinutes < 60 ->
+                                        "$snoozeDurationMinutes minutes"
+
+                                    snoozeDurationMinutes % 60 == 0 ->
+                                        "${snoozeDurationMinutes / 60} hours"
+
+                                    else ->
+                                        "${snoozeDurationMinutes / 60} hr ${snoozeDurationMinutes % 60} min"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Same approach as the delay slider: the slider moves
+                            // through a list of options instead of raw numbers.
+                            val snoozeOptions = remember {
+                                buildList {
+                                    add(1)
+                                    add(5)
+                                    addAll((10..60 step 5).toList())
+                                    addAll((90..240 step 30).toList())
+                                }
+                            }
+
+                            val snoozeIndex = snoozeOptions.indexOfFirst {
+                                it >= snoozeDurationMinutes
+                            }.coerceAtLeast(0)
+
+                            Slider(
+                                value = snoozeIndex.toFloat(),
+                                onValueChange = { value ->
+                                    val selectedIndex = value.roundToInt()
+                                    viewModel.updateSnoozeDurationMinutes(
+                                        snoozeOptions[selectedIndex]
+                                    )
+                                },
+                                valueRange = 0f..(snoozeOptions.lastIndex).toFloat(),
+                                steps = 0
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // --- Maximum Snooze Count ---
+                            Text(
+                                text = "Maximum Snooze Count",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (maxSnoozeCount == 1) "1 time" else "$maxSnoozeCount times",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            val countOptions = remember { (1..5).toList() }
+
+                            val countIndex = countOptions.indexOfFirst {
+                                it >= maxSnoozeCount
+                            }.coerceAtLeast(0)
+
+                            Slider(
+                                value = countIndex.toFloat(),
+                                onValueChange = { value ->
+                                    val selectedIndex = value.roundToInt()
+                                    viewModel.updateMaxSnoozeCount(
+                                        countOptions[selectedIndex]
+                                    )
+                                },
+                                valueRange = 0f..(countOptions.lastIndex).toFloat(),
+                                steps = 0
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Notification Listener Permission Card (RCS & Messages)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth()
@@ -653,8 +780,7 @@ fun SettingsScreen(
                                                     "package:${context.packageName}"
                                                 )
                                             )
-
-                                            context.startActivity(intent)
+                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                                         }
                                     }
                                 },
