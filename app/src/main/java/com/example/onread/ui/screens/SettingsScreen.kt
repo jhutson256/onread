@@ -48,6 +48,7 @@ fun Context.findActivity(): Activity? = when (this) {
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
+    onReplayTutorial: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = remember { context.findActivity() }
@@ -788,6 +789,32 @@ fun SettingsScreen(
                             ) {
                                 Text("Grant All Permissions")
                             }
+                        }
+                    }
+                }
+            }
+
+            // App Tutorial Card
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "App Tutorial",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Walk through how Onread works and check your permissions again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onReplayTutorial,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Replay Tutorial")
                         }
                     }
                 }
