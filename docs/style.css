@@ -233,3 +233,29 @@ video {
   height: 80px;
   width: auto;
 }
+
+/* ----- Onboarding tutorial section ----- */
+.section-intro {
+  color: var(--muted);
+  max-width: 640px;
+  margin: 0 0 2rem;
+}
+.tutorial-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.tutorial-step img {
+  width: 100%;
+  max-width: 200px;
+  margin: 0 auto 16px;
+  border-radius: 20px;
+}
+.tutorial-note {
+  margin-top: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
