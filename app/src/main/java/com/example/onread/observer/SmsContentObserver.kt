@@ -756,9 +756,24 @@ class SmsContentObserver(
             Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window in DB)")
             return
         }
-        Log.d("ONREAD_CONSISTENCY", "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} ($senderAddress), triggerTime: $triggerTime, threadId: $threadId")
+        Log.d(
+            "ONREAD_CONSISTENCY",
+            "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} " +
+                    "($senderAddress), triggerTime: $triggerTime, threadId: $threadId"
+        )
 
-        scheduleReminderAlarm(context, reminderId, triggerTime)
+// Dismiss older reminders from this same contact and cancel their alarms.
+        reminderRepository.dismissPendingRemindersForNumber(
+            context = context,
+            phoneNumber = senderAddress,
+            exceptReminderId = reminderId
+        )
+
+        scheduleReminderAlarm(
+            context = context,
+            reminderId = reminderId,
+            triggerTime = triggerTime
+        )
     }
 
     private suspend fun processOutgoingMessage(recipientAddress: String) {
