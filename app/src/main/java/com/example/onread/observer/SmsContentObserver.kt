@@ -26,6 +26,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
 
 class SmsContentObserver(
@@ -285,6 +287,7 @@ class SmsContentObserver(
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val reminderReplacementMutex = Mutex()
     private val lastProcessedSmsId = AtomicLong(-1L)
     private val lastProcessedMmsId = AtomicLong(-1L)
 
@@ -361,7 +364,6 @@ class SmsContentObserver(
         Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
-        checkThreadUpdatesForUri(uri)
     }
 
     override fun onChange(selfChange: Boolean) {
@@ -369,7 +371,6 @@ class SmsContentObserver(
         Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired (no URI), selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
-        checkThreadUpdatesForUri(null)
     }
 
     private fun pollLatestSms() {
@@ -751,29 +752,50 @@ class SmsContentObserver(
             threadId = threadId
         )
         val reminderRepository = ReminderRepository(reminderDao)
-        val reminderId = reminderRepository.insertReminder(reminder, skipDeduplication = true)
+
+        val reminderId = reminderReplacementMutex.withLock {
+            val newReminderId = reminderRepository.insertReminder(
+                reminder,
+                skipDeduplication = true
+            )
+
+            if (newReminderId <= 0L) {
+                return@withLock -1L
+            }
+
+            Log.d(
+                "ONREAD_CONSISTENCY",
+                "Inserted ReminderEntity ID $newReminderId for " +
+                    "${contactSetting.displayName} " +
+                    "($senderAddress), triggerTime: $triggerTime, " +
+                    "threadId: $threadId"
+            )
+
+            // Dismiss older reminders from this contact, but preserve the newest one.
+            reminderRepository.dismissPendingRemindersForNumber(
+                context = context,
+                phoneNumber = senderAddress,
+                exceptReminderId = newReminderId
+            )
+
+            // Schedule the newest reminder while the mutex is still locked.
+            scheduleReminderAlarm(
+                context = context,
+                reminderId = newReminderId,
+                triggerTime = triggerTime
+            )
+
+            newReminderId
+        }
+
         if (reminderId <= 0L) {
-            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (exact phone+body within 30s window in DB)")
+            Log.d(
+                "ONREAD_CONSISTENCY",
+                "Skipping duplicate incoming $sourceTag from " +
+                    "$senderAddress (exact phone+body within 30s window in DB)"
+            )
             return
         }
-        Log.d(
-            "ONREAD_CONSISTENCY",
-            "Inserted ReminderEntity ID $reminderId for ${contactSetting.displayName} " +
-                    "($senderAddress), triggerTime: $triggerTime, threadId: $threadId"
-        )
-
-// Dismiss older reminders from this same contact and cancel their alarms.
-        reminderRepository.dismissPendingRemindersForNumber(
-            context = context,
-            phoneNumber = senderAddress,
-            exceptReminderId = reminderId
-        )
-
-        scheduleReminderAlarm(
-            context = context,
-            reminderId = reminderId,
-            triggerTime = triggerTime
-        )
     }
 
     private suspend fun processOutgoingMessage(recipientAddress: String) {
@@ -788,88 +810,6 @@ class SmsContentObserver(
             reminderRepository.dismissPendingRemindersForNumber(context, recipientAddress)
         }
         Log.d("ONREAD_CONSISTENCY", "Dismissed pending reminders and cancelled alarms for recipient: $recipientAddress")
-    }
-
-    private fun checkThreadUpdatesForUri(uri: Uri?) {
-        scope.launch {
-            try {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-                    return@launch
-                }
-                val threadId = uri?.lastPathSegment?.toLongOrNull()
-                if (threadId != null && threadId > 0) {
-                    checkOutgoingForThread(threadId)
-                } else {
-                    checkRecentOutgoingThreads()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error checking thread updates for URI $uri", e)
-            }
-        }
-    }
-
-    private suspend fun checkOutgoingForThread(threadId: Long) {
-        try {
-            val smsUri = Uri.parse("content://sms")
-            var isOutgoing = false
-            context.contentResolver.query(
-                smsUri,
-                arrayOf(Telephony.Sms.TYPE),
-                "thread_id = ?",
-                arrayOf(threadId.toString()),
-                "date DESC LIMIT 1"
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val typeIndex = cursor.getColumnIndex(Telephony.Sms.TYPE)
-                    if (typeIndex != -1) {
-                        val type = cursor.getInt(typeIndex)
-                        if (type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX) {
-                            isOutgoing = true
-                        }
-                    }
-                }
-            }
-
-            if (isOutgoing) {
-                val addresses = getAddressesForThread(context, threadId)
-                for (address in addresses) {
-                    processOutgoingMessage(address)
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error checking outgoing for threadId $threadId", e)
-        }
-    }
-
-    private suspend fun checkRecentOutgoingThreads() {
-        try {
-            val cutoffTime = System.currentTimeMillis() - 30_000L
-            val smsUri = Uri.parse("content://sms")
-            context.contentResolver.query(
-                smsUri,
-                arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.THREAD_ID),
-                "type IN (?, ?) AND date >= ?",
-                arrayOf(
-                    Telephony.Sms.MESSAGE_TYPE_SENT.toString(),
-                    Telephony.Sms.MESSAGE_TYPE_OUTBOX.toString(),
-                    cutoffTime.toString()
-                ),
-                "date DESC LIMIT 5"
-            )?.use { cursor ->
-                val addrIndex = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
-                val threadIdIndex = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
-                while (cursor.moveToNext()) {
-                    val rawAddr = if (addrIndex != -1) cursor.getString(addrIndex) else null
-                    val threadId = if (threadIdIndex != -1) cursor.getLong(threadIdIndex) else null
-                    val resolved = resolveAddress(context, rawAddr, threadId)
-                    if (!resolved.isNullOrBlank()) {
-                        processOutgoingMessage(resolved)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error checking recent outgoing threads", e)
-        }
     }
 
     private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
