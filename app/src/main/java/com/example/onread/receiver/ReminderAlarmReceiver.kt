@@ -17,76 +17,168 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "ReminderAlarmReceiver"
-        const val ACTION_SNOOZE = "com.example.onread.ACTION_SNOOZE"
+        const val ACTION_SNOOZE =
+            "com.example.onread.ACTION_SNOOZE"
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
-        val reminderId = intent.getLongExtra("EXTRA_REMINDER_ID", -1L)
-        Log.d(TAG, "onReceive triggered with reminderId: $reminderId, action: ${intent.action}")
+    override fun onReceive(
+        context: Context,
+        intent: Intent
+    ) {
+        val reminderId = intent.getLongExtra(
+            "EXTRA_REMINDER_ID",
+            -1L
+        )
+
+        Log.d(
+            TAG,
+            "onReceive triggered with reminderId: " +
+                    "$reminderId, action: ${intent.action}"
+        )
+
         if (reminderId == -1L) {
             Log.d(TAG, "Invalid reminderId received (-1L)")
             return
         }
 
         val pendingResult = goAsync()
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val database = AppDatabase.getDatabase(context)
-                val reminderDao = database.reminderDao()
-                val settingsRepository = SettingsRepository(context)
+                val database =
+                    AppDatabase.getDatabase(context)
 
-                val snoozeEnabled = settingsRepository.snoozeEnabledFlow.first()
-                val snoozeDurationMinutes = settingsRepository.snoozeDurationMinutesFlow.first()
-                val maxSnoozeCount = settingsRepository.maxSnoozeCountFlow.first()
+                val reminderDao =
+                    database.reminderDao()
 
-                val reminder = reminderDao.getReminderById(reminderId).first()
-                Log.d(TAG, "Database operation: Fetched reminder for ID $reminderId: $reminder")
+                val settingsRepository =
+                    SettingsRepository(context)
 
-                if (reminder != null && reminder.status == "PENDING") {
-                    if (intent.action == ACTION_SNOOZE) {
-                        if (snoozeEnabled && reminder.snoozeCount < maxSnoozeCount) {
-                            val newSnoozeCount = reminder.snoozeCount + 1
-                            val newTriggerTime = System.currentTimeMillis() + (snoozeDurationMinutes * 60 * 1000L)
+                val snoozeEnabled =
+                    settingsRepository.snoozeEnabledFlow.first()
 
-                            val updatedReminder = reminder.copy(
-                                triggerTime = newTriggerTime,
-                                snoozeCount = newSnoozeCount
-                            )
-                            reminderDao.updateReminder(updatedReminder)
-                            NotificationHelper.scheduleReminderAlarm(context, reminderId, newTriggerTime)
+                val snoozeDurationMinutes =
+                    settingsRepository.snoozeDurationMinutesFlow.first()
 
-                            // Cancel current notification
-                            try {
-                                NotificationManagerCompat.from(context).cancel(reminderId.toInt())
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
+                val maxSnoozeCount =
+                    settingsRepository.maxSnoozeCountFlow.first()
 
-                            Log.d(TAG, "Snoozed reminder ID $reminderId to $newTriggerTime (snoozeCount: $newSnoozeCount / $maxSnoozeCount)")
-                        } else {
-                            Log.d(TAG, "Snooze rejected: snoozeEnabled=$snoozeEnabled, currentSnoozeCount=${reminder.snoozeCount}, maxSnoozeCount=$maxSnoozeCount")
-                        }
-                    } else {
-                        NotificationHelper.showReminderNotification(
-                            context,
-                            reminder.id,
-                            reminder.contactName,
-                            reminder.messageBody,
-                            snoozeEnabled,
-                            snoozeDurationMinutes,
-                            maxSnoozeCount,
-                            reminder.snoozeCount,
-                            reminder.phoneNumber,
-                            reminder.threadId
-                        )
-                        Log.d(TAG, "Posted notification for reminder ID $reminderId (${reminder.contactName})")
-                    }
-                } else {
-                    Log.d(TAG, "Reminder not found or status is not PENDING (status: ${reminder?.status})")
+                val reminder =
+                    reminderDao.getReminderById(reminderId).first()
+
+                Log.d(
+                    TAG,
+                    "Fetched reminder for ID $reminderId: $reminder"
+                )
+
+                if (
+                    reminder == null ||
+                    reminder.status != "PENDING"
+                ) {
+                    Log.d(
+                        TAG,
+                        "Reminder not found or is no longer pending. " +
+                                "Status: ${reminder?.status}"
+                    )
+                    return@launch
                 }
+
+                if (intent.action == ACTION_SNOOZE) {
+                    if (
+                        snoozeEnabled &&
+                        reminder.snoozeCount < maxSnoozeCount
+                    ) {
+                        val newSnoozeCount =
+                            reminder.snoozeCount + 1
+
+                        val newTriggerTime =
+                            System.currentTimeMillis() +
+                                    (snoozeDurationMinutes * 60 * 1000L)
+
+                        val updatedReminder = reminder.copy(
+                            triggerTime = newTriggerTime,
+                            snoozeCount = newSnoozeCount
+                        )
+
+                        reminderDao.updateReminder(
+                            updatedReminder
+                        )
+
+                        NotificationHelper.scheduleReminderAlarm(
+                            context,
+                            reminderId,
+                            newTriggerTime
+                        )
+
+                        try {
+                            NotificationManagerCompat
+                                .from(context)
+                                .cancel(reminderId.toInt())
+                        } catch (e: Exception) {
+                            Log.w(
+                                TAG,
+                                "Failed to cancel snoozed notification",
+                                e
+                            )
+                        }
+
+                        Log.d(
+                            TAG,
+                            "Snoozed reminder ID $reminderId"
+                        )
+                    } else {
+                        Log.d(
+                            TAG,
+                            "Snooze rejected"
+                        )
+                    }
+
+                    return@launch
+                }
+
+                // Check the database again immediately before showing
+                // the notification. This prevents a dismissed reminder
+                // from being displayed if its alarm was already firing.
+                val latestReminder =
+                    reminderDao.getReminderById(reminderId).first()
+
+                if (
+                    latestReminder == null ||
+                    latestReminder.status != "PENDING"
+                ) {
+                    Log.d(
+                        TAG,
+                        "Not showing cancelled reminder ID " +
+                                "$reminderId. Status: " +
+                                "${latestReminder?.status}"
+                    )
+                    return@launch
+                }
+
+                NotificationHelper.showReminderNotification(
+                    context,
+                    latestReminder.id,
+                    latestReminder.contactName,
+                    latestReminder.messageBody,
+                    snoozeEnabled,
+                    snoozeDurationMinutes,
+                    maxSnoozeCount,
+                    latestReminder.snoozeCount,
+                    latestReminder.phoneNumber,
+                    latestReminder.threadId
+                )
+
+                Log.d(
+                    TAG,
+                    "Posted notification for reminder ID " +
+                            "$reminderId (${latestReminder.contactName})"
+                )
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing alarm/snooze for reminder ID $reminderId", e)
-                e.printStackTrace()
+                Log.e(
+                    TAG,
+                    "Error processing reminder ID $reminderId",
+                    e
+                )
             } finally {
                 pendingResult.finish()
             }
