@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -21,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContactPhone
-import androidx.compose.material.icons.rounded.Error
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Settings
@@ -46,7 +46,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.onread.R
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import kotlinx.coroutines.launch
 
@@ -85,24 +84,25 @@ fun OnboardingScreen(
     var enableAllContacts by remember { mutableStateOf(true) }
 
     // ===== Permission status (same checks as the Settings screen) =====
-    val runtimePermissions = remember {
-        buildList {
-            add(Manifest.permission.READ_CONTACTS)
-            add(Manifest.permission.READ_SMS)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
-
     // Shows the friendly "Onread needs this" message.
     var showPermissionWarning by remember { mutableStateOf(false) }
 
-    val permissionsState = rememberMultiplePermissionsState(runtimePermissions) { results ->
+    // Checklist step: contacts + text messages (asked together).
+    val contactsAndSmsPermissions = remember {
+        listOf(Manifest.permission.READ_CONTACTS, Manifest.permission.READ_SMS)
+    }
+    val contactsAndSmsState = rememberMultiplePermissionsState(contactsAndSmsPermissions) { results ->
         // Called after the Android permission popups close.
-        if (results.values.any { granted -> !granted }) {
-            showPermissionWarning = true
-        }
+        if (results.values.any { granted -> !granted }) showPermissionWarning = true
+    }
+
+    // Checklist step: notifications (Android 13 and newer only).
+    val needsNotificationPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val notificationPermissions = remember {
+        if (needsNotificationPermission) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
+    }
+    val notificationsState = rememberMultiplePermissionsState(notificationPermissions) { results ->
+        if (results.values.any { granted -> !granted }) showPermissionWarning = true
     }
 
     val alarmManager = remember {
@@ -133,11 +133,11 @@ fun OnboardingScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    fun isGranted(permission: String): Boolean =
-        permissionsState.permissions.find { it.permission == permission }?.status?.isGranted == true
+    val contactsAndSmsGranted = contactsAndSmsState.allPermissionsGranted
+    val notificationsGranted = notificationsState.allPermissionsGranted
 
-    val allPermissionsGranted =
-        permissionsState.allPermissionsGranted && exactAlarmGranted && notificationListenerGranted
+    val allPermissionsGranted = contactsAndSmsGranted && notificationsGranted &&
+            exactAlarmGranted && notificationListenerGranted
 
     // Hide the warning once everything is allowed.
     LaunchedEffect(allPermissionsGranted) {
@@ -210,35 +210,65 @@ fun OnboardingScreen(
                     when (pages[pageIndex]) {
                         OnboardingPage.WELCOME -> WelcomePage()
                         OnboardingPage.HOW_IT_WORKS -> HowItWorksPage()
-                        OnboardingPage.PERMISSIONS -> PermissionsPage(
-                            contactsGranted = isGranted(Manifest.permission.READ_CONTACTS),
-                            smsGranted = isGranted(Manifest.permission.READ_SMS),
-                            notificationsGranted =
-                                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                                        isGranted(Manifest.permission.POST_NOTIFICATIONS),
-                            exactAlarmGranted = exactAlarmGranted,
-                            notificationListenerGranted = notificationListenerGranted,
-                            showWarning = showPermissionWarning && !allPermissionsGranted,
-                            onAllowClick = {
-                                if (!permissionsState.allPermissionsGranted) {
-                                    permissionsState.launchMultiplePermissionRequest()
-                                } else if (!exactAlarmGranted &&
-                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                                ) {
-                                    openSettingsScreen(
-                                        context,
-                                        Intent(
-                                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                                            Uri.parse("package:${context.packageName}")
+                        OnboardingPage.PERMISSIONS -> PermissionsChecklistPage(
+                            items = buildList {
+                                add(
+                                    ChecklistItem(
+                                        title = "Contacts & text messages",
+                                        reason = "So Onread knows when someone texts you, and when you reply.",
+                                        done = contactsAndSmsGranted,
+                                        actionLabel = "Allow",
+                                        onAction = { contactsAndSmsState.launchMultiplePermissionRequest() }
+                                    )
+                                )
+                                if (needsNotificationPermission) {
+                                    add(
+                                        ChecklistItem(
+                                            title = "Notifications",
+                                            reason = "So Onread can send your reply reminders.",
+                                            done = notificationsGranted,
+                                            actionLabel = "Allow",
+                                            onAction = { notificationsState.launchMultiplePermissionRequest() }
                                         )
                                     )
-                                } else if (!notificationListenerGranted) {
-                                    openSettingsScreen(
-                                        context,
-                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                }
+                                // Same Android-version rule as the Settings screen's exact alarm check.
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    add(
+                                        ChecklistItem(
+                                            title = "Exact alarms",
+                                            reason = "So reminders arrive right on time.",
+                                            done = exactAlarmGranted,
+                                            actionLabel = "Allow",
+                                            onAction = {
+                                                openSettingsScreen(
+                                                    context,
+                                                    Intent(
+                                                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                                        Uri.parse("package:${context.packageName}")
+                                                    )
+                                                )
+                                            }
+                                        )
                                     )
                                 }
+                                add(
+                                    ChecklistItem(
+                                        title = "Notification access",
+                                        reason = "So Onread can also catch RCS chat messages.",
+                                        done = notificationListenerGranted,
+                                        actionLabel = "Turn On",
+                                        helpText = "In the list that opens, find Onread and switch it on, then come back here.",
+                                        onAction = {
+                                            openSettingsScreen(
+                                                context,
+                                                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                            )
+                                        }
+                                    )
+                                )
                             },
+                            showWarning = showPermissionWarning && !allPermissionsGranted,
                             onOpenAppSettingsClick = {
                                 openSettingsScreen(
                                     context,
@@ -343,83 +373,67 @@ private fun HowItWorksPage() {
     }
 }
 
+// One step in the setup checklist.
+private data class ChecklistItem(
+    val title: String,
+    val reason: String,
+    val done: Boolean,
+    val actionLabel: String,
+    val helpText: String? = null,
+    val onAction: () -> Unit
+)
+
 @Composable
-private fun PermissionsPage(
-    contactsGranted: Boolean,
-    smsGranted: Boolean,
-    notificationsGranted: Boolean,
-    exactAlarmGranted: Boolean,
-    notificationListenerGranted: Boolean,
+private fun PermissionsChecklistPage(
+    items: List<ChecklistItem>,
     showWarning: Boolean,
-    onAllowClick: () -> Unit,
     onOpenAppSettingsClick: () -> Unit
 ) {
-    PageTitle("Onread needs a few permissions")
+    val doneCount = items.count { it.done }
+    val allDone = doneCount == items.size
+
+    PageTitle("Let's get Onread ready")
     Spacer(modifier = Modifier.height(8.dp))
-    PageBody("Here's why we ask for each one.")
+    PageBody("Onread needs a few permissions to work. Tap each step to allow it.")
     Spacer(modifier = Modifier.height(24.dp))
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            PermissionRow(
-                name = "Contacts",
-                reason = "So you can choose who Onread watches.",
-                granted = contactsGranted
+            // ----- Progress -----
+            Text(
+                text = "$doneCount of ${items.size} done",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
             )
-            PermissionRow(
-                name = "Text messages (SMS)",
-                reason = "So Onread knows when someone texts you, and when you reply.",
-                granted = smsGranted
-            )
-            PermissionRow(
-                name = "Notifications",
-                reason = "So Onread can send your reply reminders.",
-                granted = notificationsGranted
-            )
-            PermissionRow(
-                name = "Exact alarms",
-                reason = "So reminders arrive right on time.",
-                granted = exactAlarmGranted
-            )
-            PermissionRow(
-                name = "Notification access",
-                reason = "So Onread can also catch RCS chat messages.",
-                granted = notificationListenerGranted
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { doneCount.toFloat() / items.size },
+                modifier = Modifier.fillMaxWidth()
             )
 
-            val allGranted = contactsGranted && smsGranted && notificationsGranted &&
-                    exactAlarmGranted && notificationListenerGranted
-
-            if (!allGranted) {
+            // ----- Steps -----
+            items.forEachIndexed { index, item ->
                 Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onAllowClick,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        when {
-                            !contactsGranted || !smsGranted || !notificationsGranted -> "Allow Access"
-                            !exactAlarmGranted -> "Allow Exact Alarms"
-                            else -> "Turn On Notification Access"
-                        }
-                    )
-                }
-                if (contactsGranted && smsGranted && notificationsGranted &&
-                    exactAlarmGranted && !notificationListenerGranted
-                ) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "In the list that opens, find Onread and switch it on, then come back here.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+                ChecklistRow(number = index + 1, item = item)
+            }
+
+            if (allDone) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "All set! Onread has everything it needs.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
 
     // ----- Friendly message when something essential is missing -----
     if (showWarning) {
+        val missing = items.filterNot { it.done }.joinToString(", ") { it.title }
         Spacer(modifier = Modifier.height(16.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -437,8 +451,18 @@ private fun PermissionsPage(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "These permissions are essential. Without them, Onread can't notice " +
-                            "new texts or remind you to reply. You can turn them on now, or anytime " +
-                            "later in Settings.",
+                            "new texts or remind you to reply.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Still needed: $missing",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "You can turn them on now, or anytime later in Settings.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -566,40 +590,69 @@ private fun StepCard(number: Int, title: String, description: String) {
 }
 
 @Composable
-private fun PermissionRow(name: String, reason: String, granted: Boolean) {
+private fun ChecklistRow(number: Int, item: ChecklistItem) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Step number, or a check mark once the step is done
+        // (same check icon as the "Required Permissions" card in Settings).
+        if (item.done) {
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = "Done",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .border(2.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = number.toString(),
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = name,
+                text = item.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = reason,
+                text = item.reason,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (!item.done && item.helpText != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = item.helpText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-        Spacer(modifier = Modifier.width(8.dp))
-        // Same icons as the "Required Permissions" card in Settings.
-        if (granted) {
-            Icon(
-                Icons.Rounded.CheckCircle,
-                contentDescription = "Granted",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        } else {
-            Icon(
-                Icons.Rounded.Error,
-                contentDescription = "Not Granted",
-                tint = MaterialTheme.colorScheme.error
-            )
+
+        if (!item.done) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = item.onAction,
+                // Screen readers hear "Allow: Notifications" instead of just "Allow".
+                modifier = Modifier.semantics {
+                    contentDescription = "${item.actionLabel}: ${item.title}"
+                }
+            ) {
+                Text(item.actionLabel)
+            }
         }
     }
 }
