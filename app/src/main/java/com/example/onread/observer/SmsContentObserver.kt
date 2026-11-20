@@ -754,6 +754,13 @@ class SmsContentObserver(
         val reminderRepository = ReminderRepository(reminderDao)
 
         val reminderId = reminderReplacementMutex.withLock {
+            // Delete all older pending reminders from this contact first.
+            reminderRepository.dismissPendingRemindersForNumber(
+                context = context,
+                phoneNumber = senderAddress
+            )
+
+            // Create a new pending reminder for the newest text.
             val newReminderId = reminderRepository.insertReminder(
                 reminder,
                 skipDeduplication = true
@@ -765,20 +772,13 @@ class SmsContentObserver(
 
             Log.d(
                 "ONREAD_CONSISTENCY",
-                "Inserted ReminderEntity ID $newReminderId for " +
-                    "${contactSetting.displayName} " +
-                    "($senderAddress), triggerTime: $triggerTime, " +
-                    "threadId: $threadId"
+                "Created newest reminder ID $newReminderId for " +
+                        "${contactSetting.displayName} " +
+                        "($senderAddress), triggerTime: $triggerTime, " +
+                        "threadId: $threadId"
             )
 
-            // Dismiss older reminders from this contact, but preserve the newest one.
-            reminderRepository.dismissPendingRemindersForNumber(
-                context = context,
-                phoneNumber = senderAddress,
-                exceptReminderId = newReminderId
-            )
-
-            // Schedule the newest reminder while the mutex is still locked.
+            // Schedule only the newest reminder.
             scheduleReminderAlarm(
                 context = context,
                 reminderId = newReminderId,
@@ -786,6 +786,14 @@ class SmsContentObserver(
             )
 
             newReminderId
+        }
+
+        if (reminderId <= 0L) {
+            Log.d(
+                "ONREAD_CONSISTENCY",
+                "Could not create reminder for $senderAddress"
+            )
+            return
         }
 
         if (reminderId <= 0L) {
