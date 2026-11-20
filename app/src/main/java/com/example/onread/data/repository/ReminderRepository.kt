@@ -79,24 +79,26 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
         )
     }
 
-    suspend fun dismissPendingRemindersForNumber(context: Context, phoneNumber: String) {
+    suspend fun dismissPendingRemindersForNumber(phoneNumber: String) {
+        dismissPendingRemindersForNumber(context = null, phoneNumber = phoneNumber)
+    }
+
+    suspend fun dismissPendingRemindersForNumber(context: Context?, phoneNumber: String) {
+        if (phoneNumber.isBlank()) return
         val pendingReminders = reminderDao.getPendingRemindersList()
-        val inputDigits = phoneNumber.replace(Regex("[^0-9]"), "")
+        val inputDigits = phoneNumber.filter { it.isDigit() }
+        val inputSuffix = if (inputDigits.length >= 10) inputDigits.takeLast(10) else inputDigits
 
         for (reminder in pendingReminders) {
-            val existingDigits = reminder.phoneNumber.replace(Regex("[^0-9]"), "")
-            val phoneMatches = (reminder.phoneNumber == phoneNumber) ||
-                (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() &&
-                    ((existingDigits == inputDigits) ||
-                     (inputDigits.length >= 10 && existingDigits.length >= 10 && inputDigits.takeLast(10) == existingDigits.takeLast(10))))
-
-            if (phoneMatches) {
+            if (isPhoneNumberMatch(reminder.phoneNumber, phoneNumber)) {
                 val updated = reminder.copy(status = "DISMISSED")
                 reminderDao.updateReminder(updated)
-                NotificationHelper.cancelReminderAlarm(context, reminder.id)
-                try {
-                    NotificationManagerCompat.from(context).cancel(reminder.id.toInt())
-                } catch (_: Exception) {
+                if (context != null) {
+                    NotificationHelper.cancelReminderAlarm(context, reminder.id)
+                    try {
+                        NotificationManagerCompat.from(context).cancel(reminder.id.toInt())
+                    } catch (_: Exception) {
+                    }
                 }
             }
         }
@@ -105,6 +107,24 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
             reminderDao.dismissRemindersForNumber(normalizedAddress)
         }
         reminderDao.dismissRemindersForNumber(phoneNumber)
+        if (inputSuffix.length >= 7) {
+            reminderDao.dismissRemindersForPhoneSuffix(inputSuffix)
+        }
+    }
+
+    companion object {
+        fun isPhoneNumberMatch(num1: String, num2: String): Boolean {
+            if (num1 == num2) return true
+            val digits1 = num1.filter { it.isDigit() }
+            val digits2 = num2.filter { it.isDigit() }
+            if (digits1.isEmpty() || digits2.isEmpty()) return false
+            if (digits1 == digits2) return true
+            val suffix1 = if (digits1.length >= 10) digits1.takeLast(10) else digits1
+            val suffix2 = if (digits2.length >= 10) digits2.takeLast(10) else digits2
+            if (suffix1.length >= 7 && suffix2.length >= 7 && suffix1 == suffix2) return true
+            if (digits1.length >= 7 && digits2.length >= 7 && (digits1.endsWith(digits2) || digits2.endsWith(digits1))) return true
+            return false
+        }
     }
 
     suspend fun updateReminder(reminder: ReminderEntity) {

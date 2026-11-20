@@ -1,5 +1,7 @@
 package com.example.onread
 
+import android.app.Notification
+import android.os.Bundle
 import com.example.onread.data.dao.ReminderDao
 import com.example.onread.data.entity.ContactGroupEntity
 import com.example.onread.data.entity.ContactSettingEntity
@@ -7,6 +9,7 @@ import com.example.onread.data.entity.GroupEntity
 import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.observer.SmsContentObserver
+import com.example.onread.service.RcsNotificationListenerService
 import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -375,35 +378,21 @@ class ContactAndReminderTest {
             specificMinute = 0
         )
 
-        val contact = ContactSettingEntity(
+        val contactInGroup = ContactSettingEntity(
             contactId = "c1",
             phoneNumber = "111",
             displayName = "Alice",
-            customDelayMinutes = 15,
-            customSpecificHour = null,
-            customSpecificMinute = null
+            groupId = "g1"
         )
-        val contactWithCustomTime = ContactSettingEntity(
-            contactId = "c2",
-            phoneNumber = "222",
-            displayName = "Bob",
-            customDelayMinutes = null,
-            customSpecificHour = 17,
-            customSpecificMinute = 30
+
+        val resolved = ReminderSchedulingHelper.resolveSettings(
+            contact = contactInGroup,
+            group = group,
+            defaultDelayMinutes = 30,
+            timestampMs = 1000000L
         )
-        val contacts = listOf(contactWithDelayNoCustomTime, contactWithCustomTime)
 
-        val updatedContacts = contacts.map { contact ->
-            if (contact.customSpecificHour == null || contact.customSpecificMinute == null) {
-                contact.copy(customDelayMinutes = null)
-            } else {
-                contact
-            }
-        }
-
-        assertNull("Contact without custom time should have customDelayMinutes cleared", updatedContacts[0].customDelayMinutes)
-        assertEquals(17, updatedContacts[1].customSpecificHour)
-        assertEquals(30, updatedContacts[1].customSpecificMinute)
+        assertTrue(resolved.isReminderEnabled)
     }
 
     @Test
@@ -417,7 +406,14 @@ class ContactAndReminderTest {
         val targetHour = 18 // 6:00 PM
         val targetMinute = 30
 
-        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        val triggerTime = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = postTime,
+            useSpecificTime = true,
+            specificHour = targetHour,
+            specificMinute = targetMinute,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
 
         val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
         assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
@@ -438,7 +434,14 @@ class ContactAndReminderTest {
         val targetHour = 18 // 6:00 PM (has passed today)
         val targetMinute = 30
 
-        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        val triggerTime = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = postTime,
+            useSpecificTime = true,
+            specificHour = targetHour,
+            specificMinute = targetMinute,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
 
         val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
         assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
@@ -446,5 +449,32 @@ class ContactAndReminderTest {
         assertEquals(16, triggerCalendar.get(java.util.Calendar.DAY_OF_MONTH)) // Next day!
         assertEquals(18, triggerCalendar.get(java.util.Calendar.HOUR_OF_DAY))
         assertEquals(30, triggerCalendar.get(java.util.Calendar.MINUTE))
+    }
+
+    @Test
+    fun isPhoneNumberMatch_matchesVariousFormats() {
+        assertTrue(ReminderRepository.isPhoneNumberMatch("+12085551234", "2085551234"))
+        assertTrue(ReminderRepository.isPhoneNumberMatch("2085551234", "+12085551234"))
+        assertTrue(ReminderRepository.isPhoneNumberMatch("(208) 555-1234", "2085551234"))
+        assertTrue(ReminderRepository.isPhoneNumberMatch("+1 (208) 555-1234", "+12085551234"))
+        assertTrue(ReminderRepository.isPhoneNumberMatch("+12085551234", "+12085551234"))
+
+        assertFalse(ReminderRepository.isPhoneNumberMatch("2085551234", "2085559999"))
+        assertFalse(ReminderRepository.isPhoneNumberMatch("+12085551234", "+12085559999"))
+    }
+
+    @Test
+    fun isOutgoingNotification_detectsOutgoingMessages() {
+        assertTrue("Text starting with 'You: ' indicates outgoing message",
+            RcsNotificationListenerService.isOutgoingTitleOrText("Alice", "You: Sounds good!"))
+        assertTrue("Title starting with 'To: ' indicates outgoing message",
+            RcsNotificationListenerService.isOutgoingTitleOrText("To: Alice", "Sounds good!"))
+        assertTrue("Text equal to 'Sent' indicates outgoing message",
+            RcsNotificationListenerService.isOutgoingTitleOrText("Alice", "Sent"))
+        assertTrue("Text starting with 'Delivered' indicates outgoing message",
+            RcsNotificationListenerService.isOutgoingTitleOrText("Alice", "Delivered"))
+
+        assertFalse("Standard incoming message should return false",
+            RcsNotificationListenerService.isOutgoingTitleOrText("Alice", "Hey what's up?"))
     }
 }

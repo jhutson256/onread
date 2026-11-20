@@ -361,6 +361,7 @@ class SmsContentObserver(
         Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired for URI: $uri, selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
+        checkThreadUpdatesForUri(uri)
     }
 
     override fun onChange(selfChange: Boolean) {
@@ -368,6 +369,7 @@ class SmsContentObserver(
         Log.d("ONREAD_CONSISTENCY", "ContentObserver onChange fired (no URI), selfChange: $selfChange")
         pollLatestSms()
         pollLatestMms()
+        checkThreadUpdatesForUri(null)
     }
 
     private fun pollLatestSms() {
@@ -495,7 +497,7 @@ class SmsContentObserver(
                                     threadId = threadId ?: 0L
                                 )
                             }
-                            Telephony.Sms.MESSAGE_TYPE_SENT -> {
+                            Telephony.Sms.MESSAGE_TYPE_SENT, Telephony.Sms.MESSAGE_TYPE_OUTBOX -> {
                                 Log.d("ONREAD_CONSISTENCY", "Processing OUTGOING SMS/RCS to $resolvedAddress (id: $id)")
                                 processOutgoingMessage(resolvedAddress)
                             }
@@ -761,8 +763,98 @@ class SmsContentObserver(
 
     private suspend fun processOutgoingMessage(recipientAddress: String) {
         val reminderRepository = ReminderRepository(database.reminderDao())
-        reminderRepository.dismissPendingRemindersForNumber(context, recipientAddress)
+        val cleanDigits = recipientAddress.filter { it.isDigit() }
+        val normalized = recipientAddress.replace(Regex("[^0-9+]"), "").ifEmpty { recipientAddress }
+        reminderRepository.dismissPendingRemindersForNumber(context, normalized)
+        if (cleanDigits.isNotEmpty() && cleanDigits != normalized) {
+            reminderRepository.dismissPendingRemindersForNumber(context, cleanDigits)
+        }
+        if (recipientAddress != normalized && recipientAddress != cleanDigits) {
+            reminderRepository.dismissPendingRemindersForNumber(context, recipientAddress)
+        }
         Log.d("ONREAD_CONSISTENCY", "Dismissed pending reminders and cancelled alarms for recipient: $recipientAddress")
+    }
+
+    private fun checkThreadUpdatesForUri(uri: Uri?) {
+        scope.launch {
+            try {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+                    return@launch
+                }
+                val threadId = uri?.lastPathSegment?.toLongOrNull()
+                if (threadId != null && threadId > 0) {
+                    checkOutgoingForThread(threadId)
+                } else {
+                    checkRecentOutgoingThreads()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error checking thread updates for URI $uri", e)
+            }
+        }
+    }
+
+    private suspend fun checkOutgoingForThread(threadId: Long) {
+        try {
+            val smsUri = Uri.parse("content://sms")
+            var isOutgoing = false
+            context.contentResolver.query(
+                smsUri,
+                arrayOf(Telephony.Sms.TYPE),
+                "thread_id = ?",
+                arrayOf(threadId.toString()),
+                "date DESC LIMIT 1"
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val typeIndex = cursor.getColumnIndex(Telephony.Sms.TYPE)
+                    if (typeIndex != -1) {
+                        val type = cursor.getInt(typeIndex)
+                        if (type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX) {
+                            isOutgoing = true
+                        }
+                    }
+                }
+            }
+
+            if (isOutgoing) {
+                val addresses = getAddressesForThread(context, threadId)
+                for (address in addresses) {
+                    processOutgoingMessage(address)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking outgoing for threadId $threadId", e)
+        }
+    }
+
+    private suspend fun checkRecentOutgoingThreads() {
+        try {
+            val cutoffTime = System.currentTimeMillis() - 30_000L
+            val smsUri = Uri.parse("content://sms")
+            context.contentResolver.query(
+                smsUri,
+                arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.THREAD_ID),
+                "type IN (?, ?) AND date >= ?",
+                arrayOf(
+                    Telephony.Sms.MESSAGE_TYPE_SENT.toString(),
+                    Telephony.Sms.MESSAGE_TYPE_OUTBOX.toString(),
+                    cutoffTime.toString()
+                ),
+                "date DESC LIMIT 5"
+            )?.use { cursor ->
+                val addrIndex = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                val threadIdIndex = cursor.getColumnIndex(Telephony.Sms.THREAD_ID)
+                while (cursor.moveToNext()) {
+                    val rawAddr = if (addrIndex != -1) cursor.getString(addrIndex) else null
+                    val threadId = if (threadIdIndex != -1) cursor.getLong(threadIdIndex) else null
+                    val resolved = resolveAddress(context, rawAddr, threadId)
+                    if (!resolved.isNullOrBlank()) {
+                        processOutgoingMessage(resolved)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking recent outgoing threads", e)
+        }
     }
 
     private fun getMmsAddresses(mmsId: Long, targetType: Int): List<String> {
