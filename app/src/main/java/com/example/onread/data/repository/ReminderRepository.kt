@@ -79,32 +79,51 @@ class ReminderRepository(private val reminderDao: ReminderDao) {
         )
     }
 
-    suspend fun dismissPendingRemindersForNumber(context: Context, phoneNumber: String) {
-        val pendingReminders = reminderDao.getPendingRemindersList()
+    suspend fun dismissPendingRemindersForNumber(
+        context: Context,
+        phoneNumber: String,
+        exceptReminderId: Long? = null
+    ) {
         val inputDigits = phoneNumber.replace(Regex("[^0-9]"), "")
+        val phoneSuffix = inputDigits.takeLast(10)
+
+        val pendingReminders = reminderDao.getPendingRemindersForNumber(
+            phoneNumber = phoneNumber,
+            phoneSuffix = phoneSuffix
+        )
 
         for (reminder in pendingReminders) {
+            if (reminder.id == exceptReminderId) {
+                continue
+            }
+
             val existingDigits = reminder.phoneNumber.replace(Regex("[^0-9]"), "")
-            val phoneMatches = (reminder.phoneNumber == phoneNumber) ||
-                (inputDigits.isNotEmpty() && existingDigits.isNotEmpty() &&
-                    ((existingDigits == inputDigits) ||
-                     (inputDigits.length >= 10 && existingDigits.length >= 10 && inputDigits.takeLast(10) == existingDigits.takeLast(10))))
+
+            val phoneMatches =
+                reminder.phoneNumber == phoneNumber ||
+                        (
+                                inputDigits.length >= 10 &&
+                                        existingDigits.length >= 10 &&
+                                        inputDigits.takeLast(10) == existingDigits.takeLast(10)
+                                )
 
             if (phoneMatches) {
-                val updated = reminder.copy(status = "DISMISSED")
-                reminderDao.updateReminder(updated)
+                reminderDao.updateReminder(
+                    reminder.copy(status = "DISMISSED")
+                )
+
+                // Cancel the alarm that would have shown the old reminder.
                 NotificationHelper.cancelReminderAlarm(context, reminder.id)
+
+                // Also cancel it in case the notification was already displayed.
                 try {
-                    NotificationManagerCompat.from(context).cancel(reminder.id.toInt())
+                    NotificationManagerCompat
+                        .from(context)
+                        .cancel(reminder.id.toInt())
                 } catch (_: Exception) {
                 }
             }
         }
-        val normalizedAddress = phoneNumber.replace(Regex("[^0-9+]"), "")
-        if (normalizedAddress.isNotEmpty()) {
-            reminderDao.dismissRemindersForNumber(normalizedAddress)
-        }
-        reminderDao.dismissRemindersForNumber(phoneNumber)
     }
 
     suspend fun updateReminder(reminder: ReminderEntity) {

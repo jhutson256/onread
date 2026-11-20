@@ -419,7 +419,14 @@ class ContactAndReminderTest {
         val targetHour = 18 // 6:00 PM
         val targetMinute = 30
 
-        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        val triggerTime = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = postTime,
+            useSpecificTime = true,
+            specificHour = targetHour,
+            specificMinute = targetMinute,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
 
         val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
         assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))
@@ -440,7 +447,14 @@ class ContactAndReminderTest {
         val targetHour = 18 // 6:00 PM (has passed today)
         val targetMinute = 30
 
-        val triggerTime = SmsContentObserver.calculateSpecificTriggerTime(postTime, targetHour, targetMinute)
+        val triggerTime = ReminderSchedulingHelper.calculateTriggerTime(
+            timestampMs = postTime,
+            useSpecificTime = true,
+            specificHour = targetHour,
+            specificMinute = targetMinute,
+            customDelayMinutes = null,
+            defaultDelayMinutes = 30
+        )
 
         val triggerCalendar = java.util.Calendar.getInstance().apply { timeInMillis = triggerTime }
         assertEquals(2025, triggerCalendar.get(java.util.Calendar.YEAR))

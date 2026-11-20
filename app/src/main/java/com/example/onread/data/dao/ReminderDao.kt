@@ -62,4 +62,20 @@ interface ReminderDao {
 
     @Query("UPDATE reminders SET status = 'DISMISSED' WHERE phoneNumber = :phoneNumber AND status = 'PENDING'")
     suspend fun dismissRemindersForNumber(phoneNumber: String)
+
+    @Query("""
+        SELECT * FROM reminders
+        WHERE status = 'PENDING'
+          AND (
+              phoneNumber = :phoneNumber
+              OR (
+                  LENGTH(:phoneSuffix) >= 10
+                  AND phoneNumber LIKE '%' || :phoneSuffix
+              )
+          )
+    """)
+        suspend fun getPendingRemindersForNumber(
+            phoneNumber: String,
+            phoneSuffix: String
+        ): List<ReminderEntity>
 }
