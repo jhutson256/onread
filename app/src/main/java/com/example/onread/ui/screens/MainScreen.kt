@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -41,14 +42,26 @@ fun MainScreen(
 ) {
     val hasSeenOnboarding by viewModel.hasSeenOnboarding.collectAsState()
 
-    if (hasSeenOnboarding == false) {
-        OnboardingDialog(
-            onEnableAll = { viewModel.setOnboardingCompleted(true) },
-            onDisableAll = { viewModel.setOnboardingCompleted(false) }
-        )
-    }
+    // True while someone replays the tutorial from Settings.
+    var isReplayingTutorial by rememberSaveable { mutableStateOf(false) }
 
     val backStack = remember { mutableStateListOf<Any>(DashboardRoute) }
+
+    // Onboarding tutorial: shown on first launch, or when replayed from Settings.
+    if (hasSeenOnboarding == false || isReplayingTutorial) {
+        OnboardingScreen(
+            isFirstRun = !isReplayingTutorial,
+            onFinish = { enableAllContacts ->
+                if (isReplayingTutorial) {
+                    // Replay: just close it. Don't touch contact settings.
+                    isReplayingTutorial = false
+                } else {
+                    viewModel.setOnboardingCompleted(enableAllContacts)
+                }
+            }
+        )
+        return
+    }
 
     LaunchedEffect(initialIntent) {
         if (initialIntent?.getBooleanExtra("OPEN_DASHBOARD", false) == true) {
@@ -149,7 +162,9 @@ fun MainScreen(
                         GroupsScreen()
                     }
                     is SettingsRoute -> NavEntry(key) {
-                        SettingsScreen()
+                        SettingsScreen(
+                            onReplayTutorial = { isReplayingTutorial = true }
+                        )
                     }
                     else -> NavEntry(Unit) {
                         Text("Unknown Route")

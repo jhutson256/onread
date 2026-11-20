@@ -1,4 +1,19 @@
 <resources>
 
     <style name="Theme.Onread" parent="Theme.MaterialComponents.Light" />
+
+    <style
+        name="Theme.Onread.TimePickerDialog"
+        parent="Theme.MaterialComponents.DayNight.Dialog.Alert">
+
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorAccent">@color/purple_500</item>
+
+        <item name="android:colorAccent">@color/purple_500</item>
+        <item name="android:colorControlActivated">@color/purple_500</item>
+        <item name="android:colorControlHighlight">@color/purple_500</item>
+        <item name="android:colorButtonNormal">@color/purple_500</item>
+    </style>
+
 </resources>
