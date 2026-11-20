@@ -4,10 +4,12 @@ import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.PendingIntent
+import android.app.Person
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Telephony
@@ -41,6 +43,53 @@ class RcsNotificationListenerService : NotificationListenerService() {
         serviceScope.cancel()
     }
 
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        if (sbn == null) return
+
+        val packageName = sbn.packageName ?: return
+        val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
+
+        if (!isMessagingApp(packageName, defaultSmsPackage)) {
+            return
+        }
+
+        val notification = sbn.notification ?: return
+        val (rawTitle, _) = extractTitleAndText(notification)
+        if (rawTitle.isNullOrBlank()) return
+
+        serviceScope.launch {
+            try {
+                val database = AppDatabase.getDatabase(applicationContext)
+                val contactDao = database.contactDao()
+                val settingsRepository = SettingsRepository(applicationContext)
+
+                val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
+                val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
+                val allContacts = contactDao.getAllContactSettings().first()
+
+                val cleanedTitle = rawTitle.replace(Regex("^(To:|Sent to:|You:)\\s*", RegexOption.IGNORE_CASE), "").trim()
+
+                val contactSetting = resolveContactSetting(
+                    context = applicationContext,
+                    rawTitle = cleanedTitle.ifEmpty { rawTitle },
+                    allContacts = allContacts,
+                    savedContactsOnly = savedContactsOnly,
+                    defaultContactReminderEnabled = defaultContactReminderEnabled
+                )
+
+                val numberToDismiss = contactSetting?.phoneNumber ?: cleanedTitle.ifEmpty { rawTitle }
+                val reminderRepository = ReminderRepository(database.reminderDao())
+                reminderRepository.dismissPendingRemindersForNumber(applicationContext, numberToDismiss)
+                if (contactSetting != null && contactSetting.phoneNumber != rawTitle) {
+                    reminderRepository.dismissPendingRemindersForNumber(applicationContext, rawTitle)
+                }
+                Log.d(TAG, "onNotificationRemoved: Dismissed pending reminders for '$numberToDismiss' from $packageName")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling onNotificationRemoved for $packageName", e)
+            }
+        }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
 
@@ -65,6 +114,42 @@ class RcsNotificationListenerService : NotificationListenerService() {
                 ?: it.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()
                 ?: it.getCharSequence("android.subject")?.toString()
         }?.trim()
+
+        if (isOutgoingNotification(notification, rawTitle, text)) {
+            Log.d(TAG, "Detected outgoing inline reply / sent notification from $packageName. Title: '$rawTitle'")
+            val cleanedTitle = (rawTitle ?: "").replace(Regex("^(To:|Sent to:|You:)\\s*", RegexOption.IGNORE_CASE), "").trim()
+            if (cleanedTitle.isNotEmpty()) {
+                serviceScope.launch {
+                    try {
+                        val database = AppDatabase.getDatabase(applicationContext)
+                        val contactDao = database.contactDao()
+                        val settingsRepository = SettingsRepository(applicationContext)
+                        val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
+                        val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
+                        val allContacts = contactDao.getAllContactSettings().first()
+
+                        val contactSetting = resolveContactSetting(
+                            context = applicationContext,
+                            rawTitle = cleanedTitle,
+                            allContacts = allContacts,
+                            savedContactsOnly = savedContactsOnly,
+                            defaultContactReminderEnabled = defaultContactReminderEnabled
+                        )
+
+                        val recipientNumber = contactSetting?.phoneNumber ?: cleanedTitle
+                        val reminderRepository = ReminderRepository(database.reminderDao())
+                        reminderRepository.dismissPendingRemindersForNumber(applicationContext, recipientNumber)
+                        if (contactSetting != null && contactSetting.phoneNumber != cleanedTitle) {
+                            reminderRepository.dismissPendingRemindersForNumber(applicationContext, cleanedTitle)
+                        }
+                        Log.d(TAG, "Dismissed pending reminders for recipient: '$recipientNumber' (rawTitle='$rawTitle')")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error dismissing pending reminders for outgoing notification from $packageName", e)
+                    }
+                }
+            }
+            return
+        }
 
         if (rawTitle.isNullOrBlank() || (text.isNullOrBlank() && subject.isNullOrBlank())) {
             Log.d(TAG, "Skipping notification from $packageName: title or text/subject is null/blank")
@@ -225,6 +310,9 @@ class RcsNotificationListenerService : NotificationListenerService() {
             if (title.isNullOrBlank()) {
                 title = extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
             }
+            if (title.isNullOrBlank()) {
+                title = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+            }
 
             var text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
             if (text.isNullOrBlank()) {
@@ -243,6 +331,68 @@ class RcsNotificationListenerService : NotificationListenerService() {
             }
 
             return Pair(title?.trim(), text?.trim())
+        }
+
+        fun isOutgoingTitleOrText(rawTitle: String?, text: String?): Boolean {
+            val cleanTitle = rawTitle?.trim() ?: ""
+            val cleanText = text?.trim() ?: ""
+
+            if (cleanText.startsWith("You: ", ignoreCase = true) ||
+                cleanText.startsWith("Me: ", ignoreCase = true) ||
+                cleanText.equals("Sent", ignoreCase = true) ||
+                cleanText.startsWith("Sent ", ignoreCase = true) ||
+                cleanText.startsWith("Delivered", ignoreCase = true) ||
+                cleanText.startsWith("Message sent", ignoreCase = true)
+            ) {
+                return true
+            }
+
+            if (cleanTitle.startsWith("You: ", ignoreCase = true) ||
+                cleanTitle.startsWith("To: ", ignoreCase = true) ||
+                cleanTitle.startsWith("Sent to ", ignoreCase = true)
+            ) {
+                return true
+            }
+
+            return false
+        }
+
+        fun isOutgoingNotification(notification: Notification, rawTitle: String?, text: String?): Boolean {
+            if (isOutgoingTitleOrText(rawTitle, text)) {
+                return true
+            }
+
+            val extras = notification.extras ?: return false
+
+            val remoteInputHistory = extras.getCharSequenceArray(Notification.EXTRA_REMOTE_INPUT_HISTORY)
+            if (!remoteInputHistory.isNullOrEmpty()) {
+                return true
+            }
+
+            @Suppress("DEPRECATION")
+            val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+            if (!messages.isNullOrEmpty()) {
+                val lastMsg = messages.lastOrNull()
+                if (lastMsg is Bundle) {
+                    val sender = lastMsg.getCharSequence("sender")?.toString()?.trim()
+                    if (sender == null || sender.equals("You", ignoreCase = true) || sender.equals("Me", ignoreCase = true)) {
+                        @Suppress("DEPRECATION")
+                        val person = lastMsg.getParcelable<Person>("sender_person")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && person != null) {
+                            val personName = person.name
+                            if (personName == null || personName.toString().isEmpty() || personName.toString().equals("You", ignoreCase = true)) {
+                                return true
+                            }
+                        } else if (sender == null || sender.equals("You", ignoreCase = true) || sender.equals("Me", ignoreCase = true)) {
+                            if (messages.size > 1 && (sender == null || sender.equals("You", ignoreCase = true))) {
+                                return true
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false
         }
 
         fun calculateTriggerTime(postTime: Long, delayMinutes: Int): Long {

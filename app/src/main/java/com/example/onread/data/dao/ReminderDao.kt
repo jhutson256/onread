@@ -78,4 +78,11 @@ interface ReminderDao {
             phoneNumber: String,
             phoneSuffix: String
         ): List<ReminderEntity>
+        UPDATE reminders 
+        SET status = 'DISMISSED' 
+        WHERE status = 'PENDING' 
+          AND LENGTH(:phoneSuffix) >= 7 
+          AND phoneNumber LIKE '%' || :phoneSuffix
+    """)
+    suspend fun dismissRemindersForPhoneSuffix(phoneSuffix: String)
 }
