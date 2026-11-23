@@ -1,9 +1,13 @@
 package com.example.onread.data.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "reminders")
+@Entity(
+    tableName = "reminders",
+    indices = [Index(value = ["sourceType", "sourceMessageId"], unique = true)]
+)
 data class ReminderEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
@@ -14,5 +18,8 @@ data class ReminderEntity(
     val triggerTime: Long,
     val status: String, // e.g., "PENDING", "SENT", "CANCELLED", "FAILED"
     val snoozeCount: Int = 0,
-    val threadId: Long = 0L
+    val threadId: Long = 0L,
+    /** Provider/message identity used to make observer processing idempotent. */
+    val sourceType: String? = null,
+    val sourceMessageId: String? = null
 )

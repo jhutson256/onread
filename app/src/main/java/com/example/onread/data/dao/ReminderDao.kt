@@ -52,10 +52,21 @@ interface ReminderDao {
         status: String
     ): Flow<List<ReminderEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertReminder(
         reminder: ReminderEntity
     ): Long
+
+    @Query("""
+        SELECT * FROM reminders
+        WHERE sourceType = :sourceType
+          AND sourceMessageId = :sourceMessageId
+        LIMIT 1
+    """)
+    suspend fun getReminderBySource(
+        sourceType: String,
+        sourceMessageId: String
+    ): ReminderEntity?
 
     @Query("""
         SELECT * FROM reminders

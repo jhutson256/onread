@@ -171,7 +171,8 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 Log.d(
                     TAG,
                     "Posted notification for reminder ID " +
-                            "$reminderId (${latestReminder.contactName})"
+                            "$reminderId (${latestReminder.contactName}); sourceType=${latestReminder.sourceType}, " +
+                            "sourceMessageId=${latestReminder.sourceMessageId}, status=${latestReminder.status}"
                 )
             } catch (e: Exception) {
                 Log.e(

@@ -52,41 +52,10 @@ class RcsNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        val notification = sbn.notification ?: return
-        val (rawTitle, _) = extractTitleAndText(notification)
-        if (rawTitle.isNullOrBlank()) return
-
-        serviceScope.launch {
-            try {
-                val database = AppDatabase.getDatabase(applicationContext)
-                val contactDao = database.contactDao()
-                val settingsRepository = SettingsRepository(applicationContext)
-
-                val savedContactsOnly = settingsRepository.savedContactsOnlyFlow.first()
-                val defaultContactReminderEnabled = settingsRepository.defaultContactReminderEnabled.first()
-                val allContacts = contactDao.getAllContactSettings().first()
-
-                val cleanedTitle = rawTitle.replace(Regex("^(To:|Sent to:|You:)\\s*", RegexOption.IGNORE_CASE), "").trim()
-
-                val contactSetting = resolveContactSetting(
-                    context = applicationContext,
-                    rawTitle = cleanedTitle.ifEmpty { rawTitle },
-                    allContacts = allContacts,
-                    savedContactsOnly = savedContactsOnly,
-                    defaultContactReminderEnabled = defaultContactReminderEnabled
-                )
-
-                val numberToDismiss = contactSetting?.phoneNumber ?: cleanedTitle.ifEmpty { rawTitle }
-                val reminderRepository = ReminderRepository(database.reminderDao())
-                reminderRepository.dismissPendingRemindersForNumber(applicationContext, numberToDismiss)
-                if (contactSetting != null && contactSetting.phoneNumber != rawTitle) {
-                    reminderRepository.dismissPendingRemindersForNumber(applicationContext, rawTitle)
-                }
-                Log.d(TAG, "onNotificationRemoved: Dismissed pending reminders for '$numberToDismiss' from $packageName")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error handling onNotificationRemoved for $packageName", e)
-            }
-        }
+        // A messaging-app notification can be removed because it was replaced,
+        // grouped, or cleared by the system. That is not proof of an outgoing
+        // reply and must not dismiss the app's newest pending reminder.
+        Log.d(TAG, "Ignoring removed messaging notification key=${sbn.key}; pending reminders are unchanged")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -159,7 +128,7 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         serviceScope.launch {
             try {
-                processRcsNotification(rawTitle, text, subject, postTime)
+                processRcsNotification(rawTitle, text, subject, postTime, "${sbn.key}:$postTime")
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing RCS notification from $packageName", e)
             }
@@ -170,7 +139,8 @@ class RcsNotificationListenerService : NotificationListenerService() {
         rawTitle: String,
         messageText: String?,
         subject: String?,
-        postTime: Long
+        postTime: Long,
+        sourceMessageId: String
     ) {
         val database = AppDatabase.getDatabase(applicationContext)
         val contactDao = database.contactDao()
@@ -233,7 +203,9 @@ class RcsNotificationListenerService : NotificationListenerService() {
             messageBody = finalMessageText,
             timestamp = postTime,
             triggerTime = triggerTime,
-            status = "PENDING"
+            status = "PENDING",
+            sourceType = "RCS",
+            sourceMessageId = sourceMessageId
         )
 
         val reminderRepository = ReminderRepository(reminderDao)

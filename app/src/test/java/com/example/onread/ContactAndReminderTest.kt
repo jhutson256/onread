@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
@@ -261,6 +262,27 @@ class ContactAndReminderTest {
         assertEquals(2L, sorted[0].id)
         assertEquals(3L, sorted[1].id)
         assertEquals(1L, sorted[2].id)
+    }
+
+    @Test
+    fun incomingSourceIdentity_distinguishesTypesAndMessageIds() {
+        val sms = ReminderEntity(
+            phoneNumber = "+15551234567",
+            contactName = "Alice",
+            messageBody = "Hello",
+            timestamp = 1000L,
+            triggerTime = 2000L,
+            status = "PENDING",
+            sourceType = "SMS",
+            sourceMessageId = "42"
+        )
+        val repeatedSms = sms.copy(id = 99L)
+        val mms = sms.copy(sourceType = "MMS", sourceMessageId = "42")
+        val newerSms = sms.copy(sourceMessageId = "43")
+
+        assertEquals(sms.sourceType to sms.sourceMessageId, repeatedSms.sourceType to repeatedSms.sourceMessageId)
+        assertNotEquals(sms.sourceType to sms.sourceMessageId, mms.sourceType to mms.sourceMessageId)
+        assertNotEquals(sms.sourceType to sms.sourceMessageId, newerSms.sourceType to newerSms.sourceMessageId)
     }
 
     @Test
