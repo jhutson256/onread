@@ -38,6 +38,56 @@ class ReminderRepository(
         return reminderDao.getRemindersByStatus(status)
     }
 
+    suspend fun replacePendingReminderForIncomingMessage(
+        context: Context,
+        phoneNumber: String,
+        threadId: Long
+    ) {
+        val pendingReminders =
+            reminderDao.getPendingRemindersList()
+
+        for (oldReminder in pendingReminders) {
+            val sameThread =
+                threadId > 0L &&
+                        oldReminder.threadId == threadId
+
+            val samePhone =
+                isPhoneNumberMatch(
+                    oldReminder.phoneNumber,
+                    phoneNumber
+                )
+
+            if (sameThread || samePhone) {
+                // Cancel the scheduled alarm.
+                NotificationHelper.cancelReminderAlarm(
+                    context,
+                    oldReminder.id
+                )
+
+                // Remove any notification that may already be displayed.
+                try {
+                    NotificationManagerCompat
+                        .from(context)
+                        .cancel(oldReminder.id.toInt())
+                } catch (_: Exception) {
+                }
+
+                // Prevent the old alarm receiver from showing it.
+                reminderDao.updateReminder(
+                    oldReminder.copy(
+                        status = "DISMISSED"
+                    )
+                )
+
+                Log.d(
+                    "ONREAD_CONSISTENCY",
+                    "Replaced old reminder ID ${oldReminder.id} " +
+                            "for phone $phoneNumber, threadId=$threadId"
+                )
+            }
+        }
+    }
+
     suspend fun insertReminder(
         reminder: ReminderEntity,
         skipDeduplication: Boolean = false
