@@ -751,16 +751,18 @@ class SmsContentObserver(
             status = "PENDING",
             threadId = threadId
         )
-        val reminderRepository = ReminderRepository(reminderDao)
+        val reminderRepository =
+            ReminderRepository(reminderDao)
 
         val reminderId = reminderReplacementMutex.withLock {
-            // Delete all older pending reminders from this contact first.
-            reminderRepository.dismissPendingRemindersForNumber(
+            // Remove the previous reminder from this contact/thread first.
+            reminderRepository.replacePendingReminderForIncomingMessage(
                 context = context,
-                phoneNumber = senderAddress
+                phoneNumber = senderAddress,
+                threadId = threadId
             )
 
-            // Create a new pending reminder for the newest text.
+            // Create a new reminder for the newest text.
             val newReminderId = reminderRepository.insertReminder(
                 reminder,
                 skipDeduplication = true
@@ -792,15 +794,6 @@ class SmsContentObserver(
             Log.d(
                 "ONREAD_CONSISTENCY",
                 "Could not create reminder for $senderAddress"
-            )
-            return
-        }
-
-        if (reminderId <= 0L) {
-            Log.d(
-                "ONREAD_CONSISTENCY",
-                "Skipping duplicate incoming $sourceTag from " +
-                    "$senderAddress (exact phone+body within 30s window in DB)"
             )
             return
         }
