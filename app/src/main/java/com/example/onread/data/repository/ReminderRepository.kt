@@ -38,54 +38,52 @@ class ReminderRepository(
         return reminderDao.getRemindersByStatus(status)
     }
 
+    /**
+     * Replaces pending reminders for one incoming conversation and inserts the
+     * new reminder while holding the process-wide replacement lock.  A valid
+     * thread ID is authoritative; phone matching is used only when the
+     * incoming message has no usable thread ID.
+     */
     suspend fun replacePendingReminderForIncomingMessage(
         context: Context,
-        phoneNumber: String,
-        threadId: Long
-    ) {
-        val pendingReminders =
-            reminderDao.getPendingRemindersList()
-
-        for (oldReminder in pendingReminders) {
-            val sameThread =
-                threadId > 0L &&
-                        oldReminder.threadId == threadId
-
-            val samePhone =
-                isPhoneNumberMatch(
-                    oldReminder.phoneNumber,
-                    phoneNumber
-                )
-
-            if (sameThread || samePhone) {
-                // Cancel the scheduled alarm.
-                NotificationHelper.cancelReminderAlarm(
-                    context,
-                    oldReminder.id
-                )
-
-                // Remove any notification that may already be displayed.
-                try {
-                    NotificationManagerCompat
-                        .from(context)
-                        .cancel(oldReminder.id.toInt())
-                } catch (_: Exception) {
-                }
-
-                // Prevent the old alarm receiver from showing it.
-                reminderDao.updateReminder(
-                    oldReminder.copy(
-                        status = "DISMISSED"
-                    )
-                )
-
-                Log.d(
-                    "ONREAD_CONSISTENCY",
-                    "Replaced old reminder ID ${oldReminder.id} " +
-                            "for phone $phoneNumber, threadId=$threadId"
-                )
+        reminder: ReminderEntity
+    ): Long = replacementMutex.withLock {
+        val pendingReminders = reminderDao.getPendingRemindersList()
+        val matchingReminders = pendingReminders.filter { oldReminder ->
+            if (reminder.threadId > 0L) {
+                oldReminder.threadId == reminder.threadId
+            } else {
+                isPhoneNumberMatch(oldReminder.phoneNumber, reminder.phoneNumber)
             }
         }
+
+        Log.d(
+            "ONREAD_CONSISTENCY",
+            "Incoming sender=${reminder.phoneNumber}, threadId=${reminder.threadId}; " +
+                "matching contact/thread IDs=${matchingReminders.map { it.id }}; " +
+                "preserved unrelated pending IDs=${pendingReminders.map { it.id } - matchingReminders.map { it.id }.toSet()}"
+        )
+
+        for (oldReminder in matchingReminders) {
+            NotificationHelper.cancelReminderAlarm(context, oldReminder.id)
+            try {
+                NotificationManagerCompat.from(context).cancel(oldReminder.id.toInt())
+                Log.d("ONREAD_CONSISTENCY", "Cancelled notification ID ${oldReminder.id}")
+            } catch (e: Exception) {
+                Log.w("ONREAD_CONSISTENCY", "Failed to cancel notification ID ${oldReminder.id}", e)
+            }
+            reminderDao.updateReminder(oldReminder.copy(status = "DISMISSED"))
+            Log.d("ONREAD_CONSISTENCY", "Dismissed old reminder ID ${oldReminder.id}")
+        }
+
+        val newId = reminderDao.insertReminder(reminder)
+        Log.d(
+            "ONREAD_CONSISTENCY",
+            "Inserted newest reminder ID $newId for sender=${reminder.phoneNumber}, threadId=${reminder.threadId}"
+        )
+        NotificationHelper.scheduleReminderAlarm(context, newId, reminder.triggerTime)
+        Log.d("ONREAD_CONSISTENCY", "Scheduled alarm for newest reminder ID $newId")
+        newId
     }
 
     suspend fun insertReminder(
@@ -240,6 +238,8 @@ class ReminderRepository(
     }
 
     companion object {
+        private val replacementMutex = Mutex()
+
         fun isPhoneNumberMatch(
             num1: String,
             num2: String
@@ -259,34 +259,11 @@ class ReminderRepository(
                 return true
             }
 
-            val suffix1 =
-                if (digits1.length >= 10) {
-                    digits1.takeLast(10)
-                } else {
-                    digits1
-                }
-
-            val suffix2 =
-                if (digits2.length >= 10) {
-                    digits2.takeLast(10)
-                } else {
-                    digits2
-                }
-
-            if (
-                suffix1.length >= 7 &&
-                suffix2.length >= 7 &&
-                suffix1 == suffix2
-            ) {
-                return true
-            }
-
-            return digits1.length >= 7 &&
-                digits2.length >= 7 &&
-                (
-                    digits1.endsWith(digits2) ||
-                        digits2.endsWith(digits1)
-                    )
+            // Accept a country-code variant only when both values are full
+            // phone numbers. Never match arbitrary partial suffixes.
+            return digits1.length >= 10 &&
+                digits2.length >= 10 &&
+                digits1.takeLast(10) == digits2.takeLast(10)
         }
     }
 }

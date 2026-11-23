@@ -24,7 +24,6 @@ import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
-import com.example.onread.util.MessageDeduplicator
 import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -173,11 +172,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
         subject: String?,
         postTime: Long
     ) {
-        if (MessageDeduplicator.isDuplicateMessage(rawTitle, messageText, subject, postTime)) {
-            Log.d(TAG, "Skipping duplicate RCS notification for '$rawTitle'")
-            return
-        }
-
         val database = AppDatabase.getDatabase(applicationContext)
         val contactDao = database.contactDao()
         val reminderDao = database.reminderDao()
@@ -200,11 +194,6 @@ class RcsNotificationListenerService : NotificationListenerService() {
 
         if (contactSetting == null) {
             Log.d(TAG, "Skipping notification for '$rawTitle': Could not resolve contact or rejected by savedContactsOnly")
-            return
-        }
-
-        if (MessageDeduplicator.isDuplicateMessage(contactSetting.phoneNumber, messageText, subject, postTime)) {
-            Log.d(TAG, "Skipping duplicate RCS notification for resolved phone '${contactSetting.phoneNumber}'")
             return
         }
 
@@ -248,15 +237,19 @@ class RcsNotificationListenerService : NotificationListenerService() {
         )
 
         val reminderRepository = ReminderRepository(reminderDao)
-        val reminderId = reminderRepository.insertReminder(reminder, skipDeduplication = true)
+        // RCS notifications do not expose a reliable thread ID here, so the
+        // repository falls back to exact normalized phone matching.
+        val reminderId = reminderRepository.replacePendingReminderForIncomingMessage(
+            context = applicationContext,
+            reminder = reminder
+        )
         if (reminderId <= 0L) {
-            Log.d(TAG, "Skipping duplicate notification reminder for ${contactSetting.displayName} (duplicate in DB)")
+            Log.d(TAG, "Could not create replacement reminder for ${contactSetting.displayName}")
             return
         }
 
         Log.d(TAG, "Inserted ReminderEntity ID $reminderId for RCS notification from ${contactSetting.displayName}")
 
-        scheduleReminderAlarm(applicationContext, reminderId, triggerTime)
     }
 
     companion object {
