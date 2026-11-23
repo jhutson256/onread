@@ -462,7 +462,7 @@ class SmsContentObserver(
 
                         val dateMs = normalizeSmsTimestamp(rawDate)
 
-                        Log.d("ONREAD_CONSISTENCY", "Detected SMS/RCS message entry: id=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
+                        Log.d("ONREAD_CONSISTENCY", "Detected sourceType=SMS sourceMessageId=$id, type=$type, rawAddress='$rawAddress', threadId=$threadId, dateMs=$dateMs, body='$body'")
 
                         if (!isNewMessage(dateMs, observerStartTime, id, initialMaxSmsId)) {
                             Log.d("ONREAD_CONSISTENCY", "Skipping historical SMS/RCS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxSmsId=$initialMaxSmsId)")
@@ -476,7 +476,7 @@ class SmsContentObserver(
                             continue
                         }
 
-                        Log.d("ONREAD_CONSISTENCY", "Resolved address for SMS message $id: '$resolvedAddress' (rawAddress='$rawAddress', threadId=$threadId)")
+                        Log.d("ONREAD_CONSISTENCY", "SMS sourceMessageId=$id sender before normalization='$rawAddress', after normalization='$resolvedAddress', threadId=$threadId")
 
                         when (type) {
                             Telephony.Sms.MESSAGE_TYPE_INBOX -> {
@@ -487,6 +487,8 @@ class SmsContentObserver(
                                     subject = null,
                                     timestampMs = dateMs,
                                     sourceTag = "RCS/SMS",
+                                    sourceType = "SMS",
+                                    sourceMessageId = id.toString(),
                                     savedContactsOnly = savedContactsOnly,
                                     defaultDelay = defaultDelay,
                                     defaultContactReminderEnabled = defaultContactReminderEnabled,
@@ -605,7 +607,7 @@ class SmsContentObserver(
 
                         val dateMs = normalizeMmsTimestamp(rawDate)
 
-                        Log.d("ONREAD_CONSISTENCY", "Detected MMS entry: id=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
+                        Log.d("ONREAD_CONSISTENCY", "Detected sourceType=MMS sourceMessageId=$id, msgBox=$msgBox, mType=$mType, threadId=$threadId, dateMs=$dateMs")
 
                         if (!isNewMessage(dateMs, observerStartTime, id, initialMaxMmsId)) {
                             Log.d("ONREAD_CONSISTENCY", "Skipping historical MMS Message ID $id (dateMs=$dateMs, observerStartTime=$observerStartTime, initialMaxMmsId=$initialMaxMmsId)")
@@ -628,7 +630,7 @@ class SmsContentObserver(
                                 Log.d("ONREAD_CONSISTENCY", "MMS sender address is null or empty for message $id. Skipping.")
                                 continue
                             }
-                            Log.d("ONREAD_CONSISTENCY", "Processing INCOMING MMS from sender $sender (id: $id, date: $dateMs, threadId: $threadId)")
+                            Log.d("ONREAD_CONSISTENCY", "MMS sourceMessageId=$id sender before normalization='$rawSender', after normalization='$sender', threadId=$threadId")
 
                             val body = extractMmsTextPart(id)
 
@@ -638,6 +640,8 @@ class SmsContentObserver(
                                 subject = subject,
                                 timestampMs = dateMs,
                                 sourceTag = "MMS",
+                                    sourceType = "MMS",
+                                    sourceMessageId = id.toString(),
                                 savedContactsOnly = savedContactsOnly,
                                 defaultDelay = defaultDelay,
                                 defaultContactReminderEnabled = defaultContactReminderEnabled,
@@ -673,6 +677,8 @@ class SmsContentObserver(
         subject: String? = null,
         timestampMs: Long,
         sourceTag: String,
+        sourceType: String,
+        sourceMessageId: String,
         savedContactsOnly: Boolean,
         defaultDelay: Int,
         defaultContactReminderEnabled: Boolean,
@@ -740,7 +746,9 @@ class SmsContentObserver(
             timestamp = timestampMs,
             triggerTime = triggerTime,
             status = "PENDING",
-            threadId = threadId
+            threadId = threadId,
+            sourceType = sourceType,
+            sourceMessageId = sourceMessageId
         )
         val reminderRepository =
             ReminderRepository(reminderDao)

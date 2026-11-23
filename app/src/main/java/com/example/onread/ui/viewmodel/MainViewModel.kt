@@ -1,6 +1,7 @@
 package com.example.onread.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.onread.data.database.AppDatabase
@@ -93,6 +94,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val reminder = reminderRepository.getReminderById(reminderId).first()
             if (reminder != null) {
                 reminderRepository.updateReminder(reminder.copy(status = "DISMISSED"))
+                Log.d("ONREAD_CONSISTENCY", "Reminder ID $reminderId status changed ${reminder.status} -> DISMISSED; reason=user dismissed from dashboard")
             }
         }
     }
@@ -100,6 +102,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun markReminderHandled(reminder: ReminderEntity) {
         viewModelScope.launch {
             reminderRepository.updateReminder(reminder.copy(status = "HANDLED"))
+            Log.d("ONREAD_CONSISTENCY", "Reminder ID ${reminder.id} status changed ${reminder.status} -> HANDLED; reason=user tapped Mark Handled")
         }
     }
 

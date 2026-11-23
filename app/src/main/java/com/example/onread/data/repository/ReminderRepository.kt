@@ -8,6 +8,7 @@ import com.example.onread.data.entity.ReminderEntity
 import com.example.onread.util.MessageDeduplicator
 import com.example.onread.util.NotificationHelper
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -48,6 +49,21 @@ class ReminderRepository(
         context: Context,
         reminder: ReminderEntity
     ): Long = replacementMutex.withLock {
+        val sourceType = reminder.sourceType
+        val sourceMessageId = reminder.sourceMessageId
+        if (!sourceType.isNullOrBlank() && !sourceMessageId.isNullOrBlank()) {
+            val existing = reminderDao.getReminderBySource(sourceType, sourceMessageId)
+            if (existing != null) {
+                Log.d(
+                    "ONREAD_CONSISTENCY",
+                    "Skipping duplicate incoming source: type=$sourceType, " +
+                        "sourceMessageId=$sourceMessageId, existingReminderId=${existing.id}, " +
+                        "status=${existing.status}"
+                )
+                return@withLock -1L
+            }
+        }
+
         val pendingReminders = reminderDao.getPendingRemindersList()
         val matchingReminders = pendingReminders.filter { oldReminder ->
             if (reminder.threadId > 0L) {
@@ -59,7 +75,8 @@ class ReminderRepository(
 
         Log.d(
             "ONREAD_CONSISTENCY",
-            "Incoming sender=${reminder.phoneNumber}, threadId=${reminder.threadId}; " +
+            "Incoming sourceType=${reminder.sourceType}, sourceMessageId=${reminder.sourceMessageId}, " +
+                "sender=${reminder.phoneNumber}, threadId=${reminder.threadId}; " +
                 "matching contact/thread IDs=${matchingReminders.map { it.id }}; " +
                 "preserved unrelated pending IDs=${pendingReminders.map { it.id } - matchingReminders.map { it.id }.toSet()}"
         )
@@ -77,6 +94,14 @@ class ReminderRepository(
         }
 
         val newId = reminderDao.insertReminder(reminder)
+        if (newId <= 0L) {
+            Log.d(
+                "ONREAD_CONSISTENCY",
+                "Skipped duplicate database insert for sourceType=${reminder.sourceType}, " +
+                    "sourceMessageId=${reminder.sourceMessageId}"
+            )
+            return@withLock -1L
+        }
         Log.d(
             "ONREAD_CONSISTENCY",
             "Inserted newest reminder ID $newId for sender=${reminder.phoneNumber}, threadId=${reminder.threadId}"
@@ -201,6 +226,11 @@ class ReminderRepository(
                 reminderDao.updateReminder(
                     reminder.copy(status = "DISMISSED")
                 )
+                Log.d(
+                    "ONREAD_CONSISTENCY",
+                    "Reminder ID ${reminder.id} status changed ${reminder.status} -> DISMISSED; " +
+                        "reason=outgoing message for normalized phone=$phoneNumber"
+                )
 
                 if (context != null) {
                     NotificationHelper.cancelReminderAlarm(
@@ -222,7 +252,15 @@ class ReminderRepository(
     suspend fun updateReminder(
         reminder: ReminderEntity
     ) {
+        val previous = reminderDao.getReminderById(reminder.id).first()
         reminderDao.updateReminder(reminder)
+        if (previous?.status != reminder.status) {
+            Log.d(
+                "ONREAD_CONSISTENCY",
+                "Reminder ID ${reminder.id} status changed ${previous?.status} -> ${reminder.status}; " +
+                    "reason=repository update"
+            )
+        }
     }
 
     suspend fun deleteReminder(

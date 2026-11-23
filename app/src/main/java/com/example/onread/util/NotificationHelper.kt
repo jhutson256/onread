@@ -1,6 +1,5 @@
 package com.example.onread.util
 
-import android.R
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -14,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.onread.MainActivity
 import com.example.onread.receiver.ReminderAlarmReceiver
+import com.example.onread.R
 
 object NotificationHelper {
     const val CHANNEL_ID = "text_reminders_channel"
@@ -68,7 +68,7 @@ object NotificationHelper {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_dialog_email)
+            .setSmallIcon(R.drawable.ic_onread_notification)
             .setContentTitle("Unreplied text from $contactName")
             .setContentText(messageBody)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
