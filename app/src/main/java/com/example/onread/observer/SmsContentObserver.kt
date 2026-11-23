@@ -20,14 +20,11 @@ import com.example.onread.data.repository.ReminderRepository
 import com.example.onread.data.repository.SettingsRepository
 import com.example.onread.receiver.ReminderAlarmReceiver
 import com.example.onread.util.ContactSyncHelper
-import com.example.onread.util.MessageDeduplicator
 import com.example.onread.util.ReminderSchedulingHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
 
 class SmsContentObserver(
@@ -287,7 +284,6 @@ class SmsContentObserver(
     }
 
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val reminderReplacementMutex = Mutex()
     private val lastProcessedSmsId = AtomicLong(-1L)
     private val lastProcessedMmsId = AtomicLong(-1L)
 
@@ -683,11 +679,6 @@ class SmsContentObserver(
         mutableContactSettings: MutableList<ContactSettingEntity>,
         threadId: Long = 0L
     ) {
-        if (MessageDeduplicator.isDuplicateMessage(senderAddress, body, subject, timestampMs)) {
-            Log.d("ONREAD_CONSISTENCY", "Skipping duplicate incoming $sourceTag from $senderAddress (MessageDeduplicator)")
-            return
-        }
-
         val reminderDao = database.reminderDao()
         val contactDao = database.contactDao()
         val groupDao = database.groupDao()
@@ -754,43 +745,22 @@ class SmsContentObserver(
         val reminderRepository =
             ReminderRepository(reminderDao)
 
-        val reminderId = reminderReplacementMutex.withLock {
-            // Remove the previous reminder from this contact/thread first.
-            reminderRepository.replacePendingReminderForIncomingMessage(
-                context = context,
-                phoneNumber = senderAddress,
-                threadId = threadId
-            )
+        val reminderId = reminderRepository.replacePendingReminderForIncomingMessage(
+            context = context,
+            reminder = reminder
+        )
 
-            // Create a new reminder for the newest text.
-            val newReminderId = reminderRepository.insertReminder(
-                reminder,
-                skipDeduplication = true
-            )
-
-            if (newReminderId <= 0L) {
-                return@withLock -1L
-            }
+        if (reminderId > 0L) {
 
             Log.d(
                 "ONREAD_CONSISTENCY",
-                "Created newest reminder ID $newReminderId for " +
+                "Created newest reminder ID $reminderId for " +
                         "${contactSetting.displayName} " +
                         "($senderAddress), triggerTime: $triggerTime, " +
                         "threadId: $threadId"
             )
 
-            // Schedule only the newest reminder.
-            scheduleReminderAlarm(
-                context = context,
-                reminderId = newReminderId,
-                triggerTime = triggerTime
-            )
-
-            newReminderId
-        }
-
-        if (reminderId <= 0L) {
+        } else {
             Log.d(
                 "ONREAD_CONSISTENCY",
                 "Could not create reminder for $senderAddress"
